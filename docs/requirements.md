@@ -21,8 +21,10 @@ picks the best. Points come from choosing consistently over time.
 - Players are noisy: usually A over B, occasionally B over A. Per player × set,
   pairwise outcome counts form a **confusion matrix**, from which the
   likelihood of any particular pick is computed.
-- **Scoring:** a product of log likelihood ratios (exact formulation TBD; to be
-  analysed later). Scoring is a pluggable module.
+- **Scoring:** a product of likelihood ratios against random clicking, i.e. a
+  sum of per-pick log₂ likelihood ratios, s = log₂(4·p) bits, at most 2 bits
+  per pick. See [scoring.md](scoring.md). The forecaster that supplies p is a
+  pluggable module.
 - Per player × set:
   - a **consistency score**;
   - a **cumulative log likelihood ratio** (LLR).
@@ -70,12 +72,13 @@ picks the best. Points come from choosing consistently over time.
 |----------------|----------------------------|
 | ImageSource    | curated AI-image list      |
 | QuadSelector   | uniform random             |
-| Scorer         | LLR product (TBD formula)  |
+| Scorer         | log₂ LR vs random; forecaster mixture ([scoring.md](scoring.md) §4) |
 
 ## Open questions
 
-- Exact LLR formulation, priors/smoothing for unseen pairs.
-- Definition of the consistency score.
+- ~~Exact LLR formulation, priors/smoothing for unseen pairs~~: see
+  [scoring.md](scoring.md).
+- Definition of the consistency score: proposal in [scoring.md](scoring.md) §5.
 - Account mechanism (magic link vs OAuth) and anonymous → account linking.
 - Privacy and data retention, especially given the identity use case.
 - Image curation workflow and set metadata (tags?).
