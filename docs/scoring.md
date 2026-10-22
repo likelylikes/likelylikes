@@ -2,505 +2,512 @@
 
 Status: design (mathematics only). Resolves *Core model → Scoring* and the
 open questions on the LLR formulation and unseen pairs in
-[requirements.md](requirements.md); proposes a consistency score (§5).
+[requirements.md](requirements.md); proposes a consistency score (§7).
 
 ## Summary
 
-- A pick scores $s = \log_2(4p)$ **bits**, where $p$ is the probability the
-  player's own model gave the picked image *before* the pick.
-- That is the log₂ likelihood ratio of the pick between "this player is
-  predictable" and "this player clicks at random" ($p = ¼$).
-- **At most 2 bits per pick.** A choice of one image from four cannot carry
-  more than $\log_2 4 = 2$ bits; any valid evidence measure against random
-  clicking is capped there. A pick the model rated at chance scores 0; a pick
-  that surprised it scores below 0.
-- The cumulative LLR is the log₂ of the **product** of the per-pick likelihood
-  ratios: the exact likelihood ratio of the player's whole record against
-  random clicking. A random clicker ever reaches $b$ bits with probability at
-  most $2^{-b}$.
-- $p$ comes from a fixed mixture of a few forecasters (§4). Each is built on
-  Bradley–Terry strengths fitted to the pairwise win counts, combined by
-  Luce's choice rule, with a Beta prior and a misclick floor.
+- Everything is built from one number per pair of images, the **pairwise
+  log likelihood ratio** $L_{ij} = \log_2\frac{n_{ij}+1}{n_{ji}+1}$ bits, read straight off the win
+  counts. There is no fitting.
+- A pick of $x$ from quad $Q$ scores
+
+  $$s = 2 - \log_2\Big(1 + \sum_{j \in Q,\, j \ne x} 2^{-L_{xj}}\Big)\ \text{bits},$$
+
+  the log₂ likelihood ratio of the pick against random clicking. Only the
+  three pairs between the picked image and the other three enter.
+- **At most 2 bits per pick.** A pick scores 0 when nothing is known about
+  its pairs. A slip costs a number of bits logarithmic in the evidence
+  against it.
+- The **cumulative LLR** is the sum of the per-pick scores. A random clicker
+  ever reaches $b$ bits with probability at most $2^{-b}$.
+- Adding the three pairwise LLRs instead is not the likelihood ratio of the
+  pick (§3.4).
+- The cost of using pairs alone: a pair never compared counts as a coin
+  flip, so learning a consistent player takes on the order of $N^2$ picks
+  (§4.5).
 
 ## 1. Setting
 
 | Symbol | Meaning |
 |---|---|
 | $N$ | images in the set |
-| $Q_t$ | the quad shown in round $t$; $k = \lvert Q_t\rvert = 4$ |
-| $x_t \in Q_t$ | the image picked |
-| $H_{t-1}$ | all earlier rounds $(Q_1,x_1),\dots,(Q_{t-1},x_{t-1})$ for this player × set |
-| $n_{ij}$ | pairwise win counts: rounds in which $i$ was picked while $j$ was shown |
-| $p_t$ | the **forecast**: a distribution over $Q_t$, computed from $H_{t-1}$ and $Q_t$ before the pick |
+| $Q$ | the quad shown in a round; $\lvert Q\rvert = 4$ |
+| $x \in Q$ | the image picked |
+| $n_{ij}$ | win count: rounds in which $i$ was picked while $j$ was shown |
+| $L_{ij}$ | pairwise LLR (§2) |
+| $s$ | the score of one pick (§3) |
+| $S_T$ | cumulative LLR after $T$ picks |
 
-A pick of $x$ from $Q$ adds 1 to $n_{xj}$ for each of the three $j \in Q\setminus\{x\}$.
-(The requirements call $n$ a confusion matrix. It is a paired-comparison win
-matrix, and §4.2 explains why it is not the whole record.)
+Everything is per player × set. A pick of $x$ from $Q$ adds 1 to $n_{xj}$ for each
+of the three $j \in Q \setminus \{x\}$. The three pairs among the images not picked are not
+decided by the pick and get nothing.
 
-The forecast is produced by a **predictor**, the pluggable part (§4). The
-score is fixed, and §3 holds for every predictor that meets the contract in
-§4.1.
+## 2. The pairwise log likelihood ratio
 
-## 2. The score
+Fix two images $i$ and $j$. Call a round *decided* for the pair when both were
+shown and one of them was picked. Suppose each decided round goes to $i$ with
+a fixed chance $\pi_{ij}$, and to $j$ with $\pi_{ji} = 1 - \pi_{ij}$. The log likelihood ratio of the
+two outcomes is $\log_2(\pi_{ij}/\pi_{ji})$: how many bits more likely it is that $i$ beats $j$ than
+that $j$ beats $i$.
 
-The reference hypothesis $H_0$ is a player who clicks at random:
-$P_0(x_t = i) = 1/k$ for every $i \in Q_t$.
+The counts estimate it. With no prior opinion about $\pi_{ij}$ (uniform on $[0,1]$),
+after $n_{ij}$ wins for $i$ and $n_{ji}$ for $j$ the chance that the next decided round goes
+to $i$ is $(n_{ij}+1)/(n_{ij}+n_{ji}+2)$ (Laplace's rule of succession). The log ratio of the two
+outcomes' chances is
 
 $$
-s_t \;=\; \log_2 \frac{p_t(x_t)}{1/k} \;=\; \log_2 k + \log_2 p_t(x_t)
-\;=\; 2 + \log_2 p_t(x_t) \quad\text{bits}
+L_{ij} = \log_2 \frac{n_{ij}+1}{n_{ji}+1}\quad\text{bits}.
 $$
 
+Properties, all read off the formula:
+
+- $L_{ji} = -L_{ij}$, and $L_{ii} = 0$.
+- $L_{ij} = 0$ for a pair never decided, or tied.
+- One more win for $i$ adds $\log_2\frac{n_{ij}+2}{n_{ij}+1} \le 1$ bit. Evidence accumulates
+  logarithmically: $L_{ij} \le \log_2(1 + n_{ij})$.
+
+| $n_{ij}$ | 0 | 1 | 3 | 7 | 5 | 10 | 100 | 100 |
+|---|---|---|---|---|---|---|---|---|
+| $n_{ji}$ | 0 | 0 | 0 | 0 | 1 | 0 | 0 | 10 |
+| $L_{ij}$ (bits) | 0 | 1 | 2 | 3 | 1.58 | 3.46 | 6.66 | 3.20 |
+
+## 3. The score of a pick
+
+### 3.1 From pairs to a pick from four
+
+Suppose, for this derivation only, that each image has a strength $w > 0$ and
+the player picks $x$ from $Q$ with probability $w_x / \sum_{y \in Q} w_y$. For a single pair this
+gives $\pi_{xj} = w_x/(w_x+w_j)$, so the pair's LLR is $\log_2(w_x/w_j)$. Divide the top and the
+bottom of the pick probability by $w_x$:
+
 $$
-S_T \;=\; \sum_{t=1}^{T} s_t \;=\; \log_2 \prod_{t=1}^{T} \frac{p_t(x_t)}{1/k}
+P(x \mid Q) = \frac{1}{\sum_{y \in Q} w_y/w_x}
+= \frac{1}{1 + \sum_{j \in Q,\, j \ne x} 2^{-\log_2(w_x/w_j)}} .
 $$
 
-$S_T$ is the per player × set **cumulative LLR**. A session's score is its
-gain $G = \sum_{t \in \text{session}} s_t$. Every quad served before the
+The probability of a pick from four is fixed by the three pairwise LLRs of
+the picked image against the other three. Putting in the estimates $L$ gives
+the forecast
+
+$$
+p(x \mid Q) = \frac{1}{1 + \sum_{j \in Q,\, j \ne x} 2^{-L_{xj}}}
+= \frac{1}{1 + \sum_{j \in Q,\, j \ne x} \frac{n_{jx}+1}{n_{xj}+1}} .
+$$
+
+Each term of the sum is the odds *against* the picked image in one of its
+three pairs. The strength assumption is used only to find this formula. The
+guarantees in §4 hold for any counts, whether or not the player behaves
+like this.
+
+### 3.2 The score
+
+The reference is a player who clicks at random, $P_0(x \mid Q) = 1/4$. The score is
+the log₂ likelihood ratio of the pick, forecast against random:
+
+$$
+s = \log_2 \frac{p(x \mid Q)}{1/4}
+= 2 - \log_2\Big(1 + \sum_{j \in Q,\, j \ne x} 2^{-L_{xj}}\Big)
+= 2 - \log_2 \sum_{y \in Q} 2^{L_{yx}} \quad\text{bits}.
+$$
+
+The last form uses $2^{-L_{xj}} = 2^{L_{jx}}$; its $y = x$ term is $2^0 = 1$.
+
+Two rules fix the order:
+
+- **Indices.** Inside the sum, the rival's wins over the picked image go on
+  top: $(n_{jx}+1)/(n_{xj}+1)$.
+- **Time.** The counts are those from *before* this pick; the update comes
+  after the score. Counts that already include the pick would give a random
+  clicker's first pick $2 - \log_2 2.5 = 0.68$ bits instead of 0.
+
+The cumulative LLR after $T$ picks is the log of the product of the per-pick
+likelihood ratios:
+
+$$
+S_T = \sum_{t=1}^{T} s_t = \log_2 \prod_{t=1}^{T} \frac{p_t(x_t \mid Q_t)}{1/4} .
+$$
+
+A session's score is its gain $G = \sum_{t \in \text{session}} s_t$. Every quad served before the
 deadline counts. Per-round points are signed and are never clamped.
 
-The requirements' "product of log likelihood ratios" should read "product of
-likelihood ratios". One likelihood ratio per pick, multiplied over picks; the
-score is the log of the product, a sum of per-pick logs. A product of logs
-has no evidential meaning.
+### 3.3 Worked values
 
-| $p_t(x_t)$ | 1 | 0.9 | 0.5 | 0.25 | 0.1 | 0.01 |
-|---|---|---|---|---|---|---|
-| $s_t$ (bits) | 2 | 1.85 | 1 | 0 | −1.32 | −4.64 |
+A pick of $x$, with $m$ past decided rounds in each pair that has any:
 
-## 3. Properties
+| The picked image's three pairs | formula | $m=1$ | 3 | 10 | 100 |
+|---|---|---|---|---|---|
+| none decided | $0$ | 0 | 0 | 0 | 0 |
+| beat each rival $m$ times, never lost | $2 - \log_2\big(1 + \tfrac{3}{m+1}\big)$ | 0.68 | 1.19 | 1.65 | 1.96 |
+| beat one rival $m$ times, other two pairs undecided | $2 - \log_2\big(3 + \tfrac{1}{m+1}\big)$ | 0.19 | 0.30 | 0.37 | 0.41 |
+| lost to one rival $m$ times, other two undecided | $2 - \log_2(m + 4)$ | −0.32 | −0.81 | −1.81 | −4.70 |
+| lost to each rival $m$ times | $2 - \log_2(3m + 4)$ | −0.81 | −1.70 | −3.09 | −6.25 |
 
-### 3.1 Range
+The third row shows the cost of pairs alone. One known pair, however
+lopsided, is worth at most $2 - \log_2 3 = 0.415$ bits while the other two pairs are
+coin flips.
 
-$s_t$ is increasing in $p_t(x_t)$:
+### 3.4 Why not add the three pairwise LLRs
 
-- $s_t = 0$ iff $p_t(x_t) = ¼$, and $s_t < 0$ iff $p_t(x_t) < ¼$;
-- $s_t < \log_2 k = 2$ always. A forecast with every entry positive never puts
-  probability 1 on one image, so 2 bits is the supremum, approached and never
-  reached;
-- if every forecast entry is at least $\varepsilon$, then $s_t \ge \log_2(k\varepsilon)$;
-  otherwise there is no lower bound. §4.3 floors it.
+The tempting score $\sum_{j \ne x} L_{xj}$ treats one pick as three independent wins. It is
+one event, "$x$ is the best of these four", with probability ¼ under random
+clicking, not $(\tfrac12)^3$. As a result:
 
-### 3.2 Why 2 bits and not 3
+- **No ceiling.** A pick that has beaten each rival $m$ times scores $3\log_2(m+1)$,
+  which is 20 bits at $m = 100$ against 1.96 in §3.3. Points grow with how long
+  someone has played, not only with how consistently.
+- **No guarantee against random clicking.** Under random clicking the sum
+  averages exactly 0, because $L$ is antisymmetric and the four possible
+  picks' sums cancel. But the average of $2^{\text{sum}}$ is then above 1 unless all four
+  sums are equal (an average of $2^v$ is at least 2 to the average of $v$). The
+  argument of §4.3 fails, and nothing bounds how often a random clicker
+  reaches a high total.
 
-A pick implies three pairwise wins. Each pairwise ratio
-$\log_2\!\big(\hat p_{xj}/\tfrac12\big)$ is at most 1 bit, so adding them gives up to
-3 bits. But the three wins are one event, "$x$ is the best of these four",
-and under random clicking that event has probability ¼, not $(\tfrac12)^3 = ⅛$.
+The row sum of $L$ is the right statistic for *ordering* images (§6). It is the
+wrong one for *scoring* a pick.
 
-Write $Z = \sum_{y\in Q}\prod_{j\ne y}\hat p_{yj} \in [0,1]$. The naive sum then exceeds
-the normalised score $\log_2\!\big(4\prod_{j\ne x}\hat p_{xj}/Z\big)$ by exactly $\log_2(2Z)$:
+## 4. Properties
 
-- up to +1 bit for a confident transitive model;
-- 0 when every $\hat p = ½$;
-- negative (it understates) for intransitive estimates.
+### 4.1 Range
 
-Worse, $\mathbb{E}_0[2^{\text{naive}}] = 2Z \to 2$ once the model has learned an order,
-so the naive score is not a martingale under random clicking and has no
-guarantee like §3.5. Never score with pairwise sums. Pairs are fine for
-*fitting* (§4.2), not for *scoring*.
-
-### 3.3 What the cumulative score is
-
-The quads come from a selection rule $\sigma(Q_t \mid H_{t-1})$ that uses only
-the observed history and the server's own randomness. This covers uniform
-selection and later adaptive "max information" selection. Under either
-hypothesis, the record has probability
-$\prod_t \sigma(Q_t \mid H_{t-1})\,P(x_t \mid H_{t-1}, Q_t)$. The selection
-factors are the same function under both, so they cancel:
+Let $M_x = \max\big(0,\ \max_{j \in Q} L_{jx}\big)$: the largest LLR any rival holds against $x$, or 0.
+The sum $\sum_{y \in Q} 2^{L_{yx}}$ has four terms, the largest being $2^{M_x}$, so it lies between $2^{M_x}$
+and $4 \cdot 2^{M_x}$. Hence
 
 $$
-\frac{P_{\text{model}}(Q_1,x_1,\dots,Q_T,x_T)}{P_0(Q_1,x_1,\dots,Q_T,x_T)}
-= \prod_{t=1}^{T} \frac{p_t(x_t)}{1/k} = 2^{S_T}.
+-M_x \;\le\; s \;\le\; 2 - M_x .
 $$
 
-So $S_T$ is the log₂ likelihood ratio of **everything observed**, "the player
-picks as forecast" against "the player clicks at random". This is just the
-chain rule of probability.
+A pick's score is set by its worst pair, to within 2 bits. In counts:
 
-If $p_t$ is a Bayesian posterior predictive,
-$p_t(i) = \int P(i \mid Q_t,\theta)\,\pi(\theta \mid H_{t-1})\,d\theta$, the product of forecasts
-is the marginal likelihood, and $2^{S_T}$ is the **Bayes factor** of the model
-against random clicking on the joint record of quads and picks. It equals the
-likelihood ratio of the picks *given* the quads only when quads are chosen
-without regard to past picks (e.g. uniform). For a plug-in predictor, $2^{S_T}$
-is still the exact likelihood ratio of that forecasting system, which is
-Dawid's prequential likelihood.
+- $s < 2$ always, because every term of the sum is positive;
+- $s = 0$ when none of the picked image's three pairs has been decided;
+- $(n_{jx}+1)/(n_{xj}+1) \le n_{jx}+1$, so $s \ge -\log_2\big(1 + A_x/4\big)$, where $A_x = \sum_{j \in Q \setminus \{x\}} n_{jx}$ counts the
+  times the other three have beaten $x$.
 
-### 3.4 What a pick is worth in expectation
+A slip therefore costs bits logarithmic in the evidence against it. The $+1$
+is the only protection needed; there is no separate misclick floor.
 
-Let $q$ be the player's actual choice distribution on $Q_t$. Then
+### 4.2 Random clicking never pays
 
-$$
-\mathbb{E}_q[s_t] = \underbrace{\big(\log_2 k - H(q)\big)}_{\text{predictability of the pick}}
-\;-\; \underbrace{D_{\mathrm{KL}}(q \,\|\, p_t)}_{\text{forecast error}} .
-$$
+**Claim.** For every quad and any counts, the four forecasts sum to at most 1:
+$\sum_{x \in Q} p(x \mid Q) \le 1$.
 
-Proof: $\sum_i q_i \log_2(k p_i) = \log_2 k + \sum_i q_i \log_2 q_i - \sum_i q_i \log_2(q_i/p_i)$.
-
-- The first term lies in $[0,2]$. It is 2 bits for a player who would always
-  pick the same image from these four, and 0 for one who picks at random. It
-  is the most this quad can earn in expectation.
-- The second term is non-negative and is zero only if $p_t = q$. A model that
-  has not learned the player yet costs points and never adds any.
-- **Random clicking never pays.** With $q$ uniform,
-  $\mathbb{E}[s_t] = -D_{\mathrm{KL}}(u \,\|\, p_t) \le 0$, whatever the model has learned.
-- A noisy player approaches $\log_2 k - H(q)$, their information rate. For
-  example, a Luce player with log-strength sd 0.5, 1, 2, 4 averages at most
-  0.11, 0.36, 0.98, 1.46 bits per pick (computed, uniform quads, $N=100$).
-
-For a Bayesian forecast, averaged over the model's own uncertainty about
-$\theta$, the identity splits further:
+*Proof.* Write $r_{jx} = 2^{L_{jx}} = (n_{jx}+1)/(n_{xj}+1)$. Then $r_{jx}\,r_{xj} = 1$ and $r_{xx} = 1$. By §3.1,
+$p_x = 1/\sum_{j \in Q} r_{jx}$, that is, $\sum_{j \in Q} r_{jx}\,p_x = 1$ for each $x$. Multiply by $p_x$ and add over $x$:
 
 $$
-\mathbb{E}[s_t] = \log_2 k \;-\; \underbrace{\mathbb{E}\,H(q_\theta)}_{\text{noise}} \;-\; \underbrace{I(x_t;\theta \mid H_{t-1}, Q_t)}_{\text{what this pick teaches the model}} .
+S = \sum_x p_x = \sum_x \sum_j r_{jx}\,p_x^2
+= \sum_x p_x^2 + \sum_{\{x,j\}} \big(r_{jx}\,p_x^2 + r_{xj}\,p_j^2\big),
 $$
 
-Points, noise and learning add up to 2 bits. A quad that teaches the model a
-lot is, by the same token, worth few points (§7, selection).
+the last sum running over the six unordered pairs of the quad. Since
+$a + b \ge 2\sqrt{ab}$ and $r_{jx}\,r_{xj} = 1$, each pair term is at least $2\,p_x p_j$. So
+$S \ge \sum_x p_x^2 + 2\sum_{\{x,j\}} p_x p_j = S^2$, hence $S \le 1$. ∎
 
-### 3.5 Guarantee against random clicking
+Equality holds exactly when $r_{jx}\,p_x^2 = r_{xj}\,p_j^2$ for every pair, i.e. $L_{jx} = \log_2 p_j - \log_2 p_x$.
+The LLRs on the quad are then differences of one number per image, so they
+add up along chains: $L_{ab} + L_{bc} = L_{ac}$. When the counts contradict each other
+(A over B, B over C, C over A), some probability goes to no image, and every
+pick from that quad scores $\log_2(1/S)$ bits less than it would if the forecast
+were rescaled to sum to 1.
 
-Under $H_0$,
-$\mathbb{E}_0\big[2^{s_t} \mid H_{t-1}, Q_t\big] = \sum_i \tfrac1k \cdot k\,p_t(i) = 1$,
-so $2^{S_T}$ is a non-negative martingale starting at 1 (a test martingale).
-By Ville's inequality,
+**Consequence.** A random clicker picks each image of $Q$ with probability ¼,
+whatever happened before, so
+
+$$
+\mathbb{E}_0\big[2^{s}\big] = \tfrac14 \sum_{x \in Q} 4\,p(x \mid Q) = S \le 1,
+\qquad
+\mathbb{E}_0[s] \le \log_2 \mathbb{E}_0\big[2^{s}\big] \le 0 .
+$$
+
+The second inequality holds because the average of a log is at most the log
+of the average. The proof uses only $L_{ji} = -L_{ij}$, so it holds for any
+antisymmetric $L$ (§5).
+
+### 4.3 The cumulative LLR and the guarantee
+
+Think of $2^{S_T}$ as the wealth of someone betting against random clicking,
+starting from 1. By §4.2 each pick multiplies the wealth by a factor that
+averages at most 1 under random clicking, whatever came before.
+
+**Guarantee.** For a random clicker,
 
 $$
 P_0\big(\exists\,T:\ S_T \ge b\big) \le 2^{-b}.
 $$
 
-The bound covers the supremum over time, so it holds at the end of a
-60-second session whatever the number of picks. It also holds for one
-session's gain given the earlier history: $P_0(G \ge b) \le 2^{-b}$. A random
-clicker reaches a 10-bit session with probability at most 1/1024. The bound
-applies per player × set, for $b$ fixed in advance. It says nothing about the
-best of many sessions or many anonymous IDs (§7).
+*Proof.* Stop at the first pick at which $S$ reaches $b$, or at the horizon.
+Stopping cannot raise the average wealth above 1, because each factor
+averages at most 1 whether or not we have stopped. On the event, the wealth
+at the stop is at least $2^b$. So $2^b \cdot P_0(\text{event}) \le 1$. Let the horizon grow. ∎
+(This is Ville's inequality.)
+
+The bound covers every moment, so it holds at the end of a 60-second session
+whatever the number of picks. It also holds for one session's gain given the
+earlier history: $P_0(G \ge b) \le 2^{-b}$. A random clicker reaches a 10-bit session
+with probability at most 1/1024. The bound applies per player × set, for $b$
+fixed in advance. It says nothing about the best of many sessions or many
+anonymous IDs (§9).
+
+**What $S_T$ is.** $2^{S_T}$ is the likelihood ratio of the whole record, "the player
+picks as the counts forecast" against "the player clicks at random". The
+quads come from a selection rule that uses only past rounds and the server's
+own randomness. Its probabilities are the same under both hypotheses and
+cancel. The leftover forecast $1 - S$ goes to no image; some image is always
+picked, so that mass is pure loss and keeps the ratio conservative.
 
 **Position play is random play.** Assume the display order is a fresh uniform
-permutation, drawn server-side for every presentation, and the predictor never
-sees screen positions. Then any strategy that uses only positions, the
-player's own timing and past rounds makes $x_t$ uniform on $Q_t$ given the
-predictor's information. That is $H_0$, so §3.4 and §3.5 apply. Content-
-dependent side channels break this: image load order, file size, URLs, DOM
-order.
+shuffle, drawn server-side for every presentation, and the scorer never sees
+screen positions. Then any strategy that uses only positions, the player's
+own timing and past rounds makes $x$ uniform on $Q$ as far as the counts can
+tell. That is random clicking, so §4.2 and §4.3 apply. Content-dependent side
+channels break this: image load order, file size, URLs, DOM order.
 
-### 3.6 The price of learning an order
+### 4.4 What a pick is worth on average
 
-A perfectly consistent player cannot earn 2 bits per pick from the start,
-under any predictor. Draw their order uniformly at random. Given the quads,
-the predictor's probabilities of the possible pick sequences sum to at most
-1, so by Gibbs' inequality the expected total shortfall $2T - S_T$ is at least
-the entropy of the pick sequence. That entropy grows towards
-$\log_2(N!/3!)$; the $3!$ is there because a consistent player never picks
-their bottom three images, so best-of-4 never orders them.
+Let $q$ be the player's actual choice probabilities on $Q$. Then
 
-| $N$ | 10 | 20 | 50 | 100 | 200 |
+$$
+\mathbb{E}_q[s] = \underbrace{\big(2 - H(q)\big)}_{\text{predictability of the pick}}
+\;-\; \underbrace{D(q \,\|\, p)}_{\text{forecast error}},
+\qquad
+H(q) = -\sum_x q_x \log_2 q_x,
+\quad
+D(q \,\|\, p) = \sum_x q_x \log_2 \frac{q_x}{p_x} .
+$$
+
+*Proof.* $\sum_x q_x \log_2(4p_x) = 2 + \sum_x q_x \log_2 q_x - \sum_x q_x \log_2(q_x/p_x)$. ∎
+
+- The first term lies in $[0, 2]$. It is 2 bits for a player who would always
+  pick the same image from these four, and 0 for one who picks at random. It
+  is the most this quad can earn on average.
+- The second term is never negative, even though $p$ may sum to less than 1:
+  $-D = \sum_x q_x \log_2(p_x/q_x) \le \log_2 \sum_x p_x \le 0$. It is 0 only if $p = q$. A forecast that has not
+  learned the player yet costs points and never adds any.
+- With $q$ uniform, $\mathbb{E}[s] = -D \le 0$: §4.2 again.
+
+### 4.5 Learning a consistent player
+
+A *consistent* player has a fixed order and always picks the quad's top
+image. Then $n_{jx} = 0$ for the pick $x$ and each rival $j$, every ratio is $1/(n_{xj}+1) \le 1$,
+and
+
+$$
+0 \;\le\; s \;=\; 2 - \log_2\Big(1 + \sum_{j} \frac{1}{n_{xj}+1}\Big) \;<\; 2 .
+$$
+
+A consistent player never loses points. Their shortfall from 2 bits is
+bounded by a telescoping sum. Since $1 + a + b + c \le (1+a)(1+b)(1+c)$ for non-negative
+$a, b, c$,
+
+$$
+2 - s \;\le\; \sum_{j} \log_2\Big(1 + \frac{1}{n_{xj}+1}\Big) = \sum_{j} \log_2 \frac{n_{xj}+2}{n_{xj}+1},
+$$
+
+and the pick then raises each of those three counts by one. Over a pair's
+first $n$ decided rounds the terms are $\log_2\frac21 + \log_2\frac32 + \dots + \log_2\frac{n+1}{n} = \log_2(n+1)$. Adding over
+pairs, for any sequence of quads and any selection rule,
+
+$$
+2T - S_T \;\le\; \sum_{\text{pairs}} \log_2(1 + n_{ij}) \;\le\; P \log_2\Big(1 + \frac{3T}{P}\Big),
+\qquad P = \frac{N(N-1)}{2} - 3 .
+$$
+
+The second step uses that the counts add up to $3T$ and that $\log_2(1+n)$ is
+concave. $P$ is the number of pairs a consistent player can ever decide: the
+three pairs among their bottom three images never are. Per pick, averaged
+over the first $T$:
+
+$$
+\frac{S_T}{T} \;\ge\; 2 - \frac{P}{T}\log_2\Big(1 + \frac{3T}{P}\Big).
+$$
+
+| $N$ | $T = 60$ | 300 | 1000 | 10 000 | picks to guarantee a 1 bit/pick average |
 |---|---|---|---|---|---|
-| $\log_2(N!/3!)$ bits | 19.2 | 58.5 | 211.6 | 522.2 | 1242.8 |
+| 10 | 0.32 | 1.37 | 1.74 | 1.96 | 149 |
+| 20 | 0 | 0.42 | 1.23 | 1.86 | 662 |
+| 50 | 0 | 0 | 0 | 1.43 | 4 323 |
+| 100 | 0 | 0 | 0 | 0.60 | 17 501 |
 
-A uniform Bayesian mixture over all orders achieves exactly this, but it
-cannot absorb a single slip. The predictor in §4 pays more. Simulated, a
-consistent player under a single Bradley–Terry component ($\alpha = 1$) earns
-about 0.45, 0.85 and 1.59 bits per pick around picks 32, 100 and 1000 at
-$N = 50$, and 0.05, 0.37 and 1.19 at $N = 200$. **Set size is a
+A 0 marks where the bound falls below the trivial $s \ge 0$. These are
+guarantees, so real scores can only be higher. The last column solves
+$\log_2(1+u) = u/3$, giving $u = 10.6$ and $T = uP/3 \approx 1.8\,N^2$.
+
+The $N^2$ is the price of using pairs alone. Each of the roughly $N^2/2$ pairs must
+be decided on its own, and a given pair is decided on average once every
+$N(N-1)/6$ picks, since each pick decides 3 of the $N(N-1)/2$ pairs. For comparison,
+the unavoidable cost for any scorer is the information in the player's
+order, which approaches $\log_2(N!/3!)$ bits in total: 19, 59, 212 and 522 bits at
+$N$ = 10, 20, 50, 100. The bound above grows like $\tfrac{N^2}{2}\log_2 T$. **Set size is a
 product lever**: large sets mean slow starts.
 
-### 3.7 Speed against accuracy
+### 4.6 Learning a noisy player
 
-A player making $r$ picks per second at $e(r)$ expected bits per pick scores
-about $60\,r\,e(r)$ per session. The product $r\,e(r)$ is an information
-throughput in bits per second, as in Hick–Hyman. Speed pays only while the
-picks stay consistent, because fast random clicking has $e \le 0$.
+Suppose the player's choices do follow the strength model of §3.1. In a
+round that shows both $i$ and $j$, $i$ is picked with probability $w_i/W_Q$ and $j$ with
+$w_j/W_Q$, where $W_Q$ is the quad's total strength. The ratio is $w_i/w_j$ whatever the
+other two images are. So as long as every pair keeps being shown,
+$n_{ij}/n_{ji} \to w_i/w_j$ and $L_{ij} \to \log_2(w_i/w_j)$. The forecast of §3.1 becomes exact, $D \to 0$, and the
+score per pick tends to $2 - H(q)$, the most any scorer can earn from that
+player (§4.4). Noise costs a player its information content and nothing
+more.
 
-### 3.8 What "consistent" means here
+### 4.7 What "consistent" means here
 
-With a prior and fitting procedure that treat all images alike, the first
-forecast is uniform, so the first pick of every player × set scores exactly
-0. Relabelling the images leaves every score unchanged. **The score is
-taste-neutral**: two players who differ only in which images they like score
-the same.
+- **Taste-neutral.** The formula treats all images alike, so relabelling the
+  images leaves every score unchanged, and every player's first pick in a set
+  scores 0. Two players who differ only in which images they like score the
+  same.
+- **Pairwise repeatability.** The score rewards picking the same image over
+  the same rival again. It does not impose a single order on the whole set:
+  A over B and B over C say nothing about A against C. Within one quad,
+  counts that contradict each other lose probability (§4.2) and lower every
+  pick from that quad.
 
-It measures predictability *under the predictor's model*, i.e. consistency
-with one latent utility order (transitivity plus Luce's independence of
-irrelevant alternatives), not mere repeatability. A player who is perfectly
-repeatable but intransitive scores about 0 under §4's model.
+### 4.8 Speed against accuracy
 
-## 4. The forecast
+A player making $r$ picks per second at $e(r)$ bits per pick on average scores
+about $60\,r\,e(r)$ per 60-second session. The product $r\,e(r)$ is an information
+rate in bits per second. Speed pays only while the picks stay consistent,
+because fast random clicking has $e \le 0$.
 
-### 4.1 Contract
+## 5. The LLR estimator
 
-A predictor is admissible if:
+The score of §3 takes any matrix $L$ of pairwise LLRs; the requirements make
+the estimator pluggable. An estimator is admissible if:
 
-1. $p_t$ is a distribution over exactly the four shown images, every entry
-   $> 0$;
-2. it is a deterministic function of $H_{t-1}$ and $Q_t$ (never of screen
-   position), computed and committed when the quad is served, before the pick;
-3. it and all its parameters are fixed for a scoring epoch, or learned from
-   past picks only. Changing it changes everyone's scores.
+1. $L_{ji} = -L_{ij}$, finite for every pair;
+2. it is computed from earlier picks only (counts, or the round log), before
+   the pick it scores, and never from screen positions;
+3. it treats all images alike;
+4. it is fixed for a scoring epoch. Changing it changes everyone's scores.
 
-Under this contract §3 holds for every predictor. The predictor decides only
-how fast consistent play is recognised: the $D_{\mathrm{KL}}$ term of §3.4. Scoring
-with a model that has already seen $x_t$, or tuning parameters on the data
-being scored, voids §3.5.
+Under this contract §4.1–§4.4 hold, since they use only antisymmetry. §4.5
+is specific to the default.
 
-### 4.2 The record
+**Default.** $L_{ij} = \log_2\frac{n_{ij}+1}{n_{ji}+1}$ (§2). The $+1$ is the uniform prior on each pair.
 
-The record of truth is the round log: $(Q_t, x_t)$, plus screen order, the
-committed $p_t$ and the predictor version. $n$ is derived from it.
+**Variants.**
 
-$n$ is enough for the pairwise fit below, which treats each pick as its three
-pairwise wins. It is **not** a sufficient statistic for the exact one-of-four
-(Luce) likelihood once $N \ge 6$: it drops which losers appeared together. Two
-histories with the same $n$ can have different Luce likelihoods. Keep the log.
+- *Discounting*, for changing taste: multiply all counts by $\gamma < 1$ each round
+  before the update. Still admissible; old picks fade.
+- *Strength-based LLRs*: $L_{ij} = \log_2(w_i/w_j)$, with strengths fitted to all the counts.
+  The LLRs then add up along chains, §4.2 holds with equality, and an
+  undecided pair gets a value from the pairs around it, so large sets are
+  learned from far fewer picks. The costs: a fit over all images after every
+  pick, and a consistent player's fitted strengths grow without limit, so a
+  slip can cost unbounded bits unless the forecast is mixed with random
+  clicking. The natural upgrade if sets are large.
 
-### 4.3 Component: strengths, Luce's rule, Beta prior, misclick floor
+## 6. Ordering
 
-Each image has a strength $w_i = e^{\theta_i}$ for this player × set: a latent
-order with noise. A component forecasts with Luce's choice rule, then mixes
-in random misclicks with probability $\lambda$:
-
-$$
-p^{\alpha,\lambda}_t(i) = (1-\lambda)\,\frac{w_i}{\sum_{j \in Q_t} w_j} + \frac{\lambda}{k},
-\qquad \text{two images: } P(i \succ j) = \frac{w_i}{w_i + w_j}\ \text{(Bradley–Terry)}.
-$$
-
-$\theta$ is the unique maximiser of the penalised pairwise log-likelihood
-
-$$
-\ell_\alpha(\theta) = \sum_{i \ne j} n_{ij} \log \sigma(\theta_i - \theta_j)
-\;+\; \alpha \sum_i \big[\log \sigma(\theta_i) + \log \sigma(-\theta_i)\big],
-\qquad \sigma(z) = \frac{1}{1+e^{-z}} .
-$$
-
-**Why the pairwise fit is sound.** Under Luce's rule, given that $i$ and $j$
-were both shown and one of them was picked, $i$ was picked with probability
-$w_i/(w_i + w_j)$ (independence of irrelevant alternatives). So each round's
-pairwise score has conditional mean zero at the true strengths:
+The requirements ask for a per-player ordering. Rank images by the row sum
 
 $$
-\mathbb{E}\!\left[\frac{\partial \ell_{ij}}{\partial \theta_i} \,\middle|\, H_{t-1}, Q_t\right]
-= \frac{w_i}{W_Q}\cdot\frac{w_j}{w_i+w_j} - \frac{w_j}{W_Q}\cdot\frac{w_i}{w_i+w_j} = 0,
-\qquad W_Q = \sum_{m \in Q} w_m ,
+R_i = \sum_{j \ne i} L_{ij}
 $$
 
-under any selection rule, adaptive ones included. The estimate is consistent
-when information grows in every direction: every image keeps being shown,
-and the pairs with growing counts connect all images. Uniform quads satisfy
-this. A schedule that stops showing an image does not, even if the
-comparison graph stays connected. The estimator is nearly efficient: its
-simulated efficiency relative to the exact Luce fit is 0.94–0.99.
+over all images in the set; undecided pairs add 0. If the LLRs come from
+strengths, $L_{ij} = \log_2 w_i - \log_2 w_j$, then $R_i = N\,(\log_2 w_i - \overline{\log_2 w})$, and $R$ ranks by strength.
 
-**Three wins are not three observations.** At equal strengths the curvature
-of the pairwise likelihood per pick is $k/2 = 2$ times the Fisher information
-of the true one-of-four likelihood: the overcount of §3.2 seen from the
-fitting side. The point estimate is unaffected. Any use of $\ell$ as if it were
-a likelihood is not: standard errors, posteriors, SPRT thresholds, and the
-prior's relative weight, which effectively counts for half.
+"Accumulated matches converge toward a total ordering" is false at the
+bottom. A consistent player never picks their bottom three images, so the
+three pairs among them are never decided. Under uniform quads, the image
+fourth from the bottom is picked only when the quad is exactly the bottom
+four. Ordering the low end needs adaptive quads of similar images.
 
-**Prior.** The $\alpha$ term is $\alpha$ virtual wins and $\alpha$ virtual losses per image
-against a phantom image of fixed strength 1. Equivalently,
-$\sigma(\theta_i) \sim \mathrm{Beta}(\alpha,\alpha)$: a priori, the chance that image $i$ beats an
-average image is $\mathrm{Beta}(\alpha,\alpha)$, uniform at $\alpha = 1$. For $\alpha > 0$ the objective is
-strictly concave and coercive, so the maximiser exists, is unique and is
-finite for every history. Its effects:
-
-- an image the player has never seen sits at $\theta = 0$, the average;
-- an image that has never lost gets a large but finite strength;
-- with no data the forecast is uniform (§3.8).
-
-**Unseen pairs need nothing extra.** $P(i \succ j)$ follows from the strengths,
-so A > B and B > C already forecast A > C. A per-pair estimate would wait for
-data on each pair. Under uniform quads a given pair is decided in a round
-with probability $6/(N(N-1))$ on average over pairs, so the typical wait is
-$N(N-1)/6$ rounds, ≈ 670 at $N = 64$. Strengths have $N$ parameters, not $N(N-1)/2$.
-
-**The misclick floor is mandatory.** Without it the strengths of a
-consistent player spread without limit, because transitivity adds up the
-gaps between adjacent ranks. Simulated at $N = 32$ after $10^4$ consistent
-picks, one pick of a quad's second-best image would cost 18.6 bits on
-average, and of its worst 41.7 bits. With the floor:
-
-$$
-\log_2 \lambda \;\le\; s_t \;\le\; 2 + \log_2\!\big(1 - \tfrac34\lambda\big).
-$$
-
-The price is a long-run ceiling just below 2 bits (1.97 at $\lambda = 1/32$). The
-floor must be a mixture with uniform, as here; clipping probabilities
-without renormalising breaks the contract.
-
-**Fitting.** Hunter's MM iteration
-$w_i \leftarrow (W_i+\alpha)\big/\big(\sum_{j\ne i}\frac{n_{ij}+n_{ji}}{w_i+w_j} + \frac{2\alpha}{w_i+1}\big)$,
-$W_i = \sum_j n_{ij}$, converges monotonically. It is extremely slow on a
-consistent player's nearly separable data, so use Newton in $\theta$, warm-started.
-With exact convergence, ties split evenly, and no label-dependent shortcuts,
-the result is label-free, as §3.8 requires.
-
-### 4.4 Default predictor: a mixture
-
-No single $\alpha$ suits everyone. A small $\alpha$ learns a consistent player fast but
-is overconfident on a noisy one. Simulated over the first 60 picks of a noisy
-player ($N = 20$), $\alpha = ½$ scored −4.4 bits, $\alpha = 1$ +3.7 and $\alpha = 4$ +9.8, against
-23.3 for a forecaster that knows the player. But a consistent player's
-long-run shortfall grows in proportion to $\alpha$. So do not choose: mix.
-
-Components $m = 1,\dots,M$, with uniform prior weights $\pi_m = 1/M$:
-
-| Component | Forecast |
-|---|---|
-| Luce, $\alpha \in \{¼, 1, 4\}$ | $p^{\alpha,\lambda}$ of §4.3 with $\lambda = 1/32$ |
-| Sharp, $\lambda \in \{1/64, 1/16\}$ | $(1-\lambda)$ on the quad's top image under the $\alpha = 1$ strengths (ties split evenly), $+\,\lambda/k$ |
-| Uniform | $1/k$ |
-
-$M = 6$. Each component keeps the score it would have earned, $S^{(m)}_{t-1}$, and
-
-$$
-p_t = \sum_m \pi_{m,t}\, p^{(m)}_t,
-\qquad
-\pi_{m,t} = \frac{\pi_m\, 2^{S^{(m)}_{t-1}}}{\sum_{m'} \pi_{m'}\, 2^{S^{(m')}_{t-1}}} .
-$$
-
-This is the Bayesian posterior over components, and it is itself an
-admissible predictor. The weights telescope to $2^{S_T} = \sum_m \pi_m\, 2^{S^{(m)}_T}$,
-hence
-
-$$
-S_T \;\ge\; \max_m S^{(m)}_T - \log_2 M \qquad (\log_2 6 = 2.58\ \text{bits}).
-$$
-
-Consequences:
-
-- the mixture is never more than 2.58 bits behind the best component in
-  hindsight, for any player;
-- because the uniform component scores 0 forever, **no player's cumulative
-  LLR ever falls below −2.58 bits**;
-- every component floors at $\lambda \ge 1/64$, so a single pick costs at most
-  6 bits;
-- the sharp components carry the fast learning that a consistent player is
-  owed (§3.6).
-
-These are design defaults, chosen so that the exact values matter little.
-Revisit them with real players.
-
-### 4.5 Alternatives not chosen
-
-| Alternative | Why not the default |
-|---|---|
-| Per-pair Beta-smoothed $\hat p_{ij}$, composed over the quad | No transitivity; forecasts uniform on any quad whose pairs are unseen. Simulated at $N=100$ after 500 picks: 66 bits for a perfect player, against 672 for a strength-based mixture. |
-| Normalised product $\prod_{j\ne i}\hat p_{ij}$ | Not Luce even when $\hat p$ is Bradley–Terry; over-sharp ($w = (2,1,1,1)$: 0.542 against Luce's 0.4). |
-| Geometric odds $\prod_{j\ne i}(\hat p_{ij}/\hat p_{ji})^{1/k}$ | Reduces exactly to Luce for Bradley–Terry inputs ($1/k$ is the only such exponent), so it is the right way to compose a pairwise matrix. A candidate extra mixture component for intransitive players, once per-pair data exist (small sets, exact repeats). |
-| Exact Luce likelihood from the round log, Bayesian (Caron–Doucet) | Coherent, with honest early uncertainty. Costs $O(T)$ per refit. An admissible drop-in, and the natural upgrade if real players show the pairwise fit's calibration matters. |
-
-## 5. Consistency score
+## 7. Consistency score
 
 The cumulative LLR grows with play. The consistency score should not: it
 should say how predictable the player is, per pick.
 
-**Target.** The fraction of the 2-bit maximum that a fully learned forecaster
+**Target.** The fraction of the 2-bit maximum that a fully learned forecast
 earns on this player, over reference quads $Q$ drawn uniformly:
 
 $$
-\kappa = \frac{\mathbb{E}_Q\big[\log_2 k - H(q_Q)\big]}{\log_2 k} = 1 - \frac{\mathbb{E}_Q\, H(\text{choice} \mid Q)}{\log_2 k} \in [0,1].
+\kappa = 1 - \frac{\mathbb{E}_Q\, H(\text{choice} \mid Q)}{2} \in [0, 1] .
 $$
 
 $\kappa$ is 1 for a player who always picks their favourite and 0 for one who
 picks at random. A player who picks the quad's favourite with probability
-$1-e$, and otherwise one of the other three at random, has $\kappa$ = 0.91, 0.82, 0.69, 0.48 at $e$ = 0.02, 0.05, 0.1, 0.2. It is the
-long-run slope of $S_T/(2T)$.
+$1-e$, and otherwise one of the other three at random, has $\kappa$ = 0.91, 0.82, 0.69,
+0.48 at $e$ = 0.02, 0.05, 0.1, 0.2. It is the long-run slope of $S_T/(2T)$ once the
+forecast is exact (§4.4, §4.6).
 
 **Estimators**, over a recent window (e.g. an exponentially weighted ~100
 picks):
 
-- *Realised*: $\hat\kappa = \overline{s_t}/2$. Out of sample, so honest. It can be
-  negative, and it is biased low while the model is learning (§3.6). It is
-  McFadden's likelihood-ratio index with the equal-probability null, computed
-  prequentially.
-- *Model-implied*: the mean of $\big(\log_2 k - H(p_t(\cdot \mid Q))\big)/2$ over a fixed
-  reference sample of quads. Smooth and available from the first session.
+- *Realised*: $\hat\kappa = \overline{s}/2$. Out of sample, so honest. It can be negative, and
+  it is biased low by $\overline{D}/2$ while the counts are still filling (§4.4).
+- *Model-implied*: the mean of $\big(2 - H(\tilde p(\cdot \mid Q))\big)/2$ over a fixed reference sample of
+  quads, where $\tilde p = p/S$ is the forecast rescaled to sum to 1. Smooth and
+  available from the first session.
 
-The two agree once the model has learned the player; a persistent gap means
-the forecasts are miscalibrated. Show the realised value, and use the gap as
-a health check. Both depend on the selection policy, so define them under the
-uniform reference selector.
+The two agree once the counts have learned the player; a persistent gap
+means the forecasts are miscalibrated. Show the realised value, and use the
+gap as a health check. Both depend on the selection policy, so define them
+under uniform selection.
 
-## 6. Identity verification
+## 8. Identity verification
 
-Use the same per-pick primitive with a different denominator:
-$\log_2\!\big(p_A(x_t)/p_{\text{ref}}(x_t)\big)$. Here $p_A$ forecasts from the claimed player's
-history, and $p_{\text{ref}}$ is a population predictive updated on the session so far.
-Summed over a session, this is Wald's SPRT statistic: accept above
-$\log_2\frac{1-\beta}{\alpha}$, reject below $\log_2\frac{\beta}{1-\alpha}$. The game score is the special
-case $p_{\text{ref}} = $ uniform.
+Use the same per-pick primitive with a different reference. For a session
+claimed to be player A, score each pick by $\log_2\big(\tilde p_A(x \mid Q)/\tilde p_{\text{ref}}(x \mid Q)\big)$. Here $\tilde p_A$ is
+§3.1's forecast from A's counts and $\tilde p_{\text{ref}}$ the same from pooled population
+counts, both rescaled to sum to 1. Summed over the session, this is Wald's
+sequential test: accept above $\log_2\frac{1-\beta}{\alpha}$ and reject below $\log_2\frac{\beta}{1-\alpha}$, where $\alpha$ is
+the false-accept rate and $\beta$ the false-reject rate. The game score is the
+special case $\tilde p_{\text{ref}} = ¼$.
 
 Differences from the game score:
 
-- per-pick LLRs are no longer capped at 2 bits;
-- the error guarantees hold only to the extent that impostors' real choices
-  follow $p_{\text{ref}}$. For a specific look-alike they do not. In simulation, a
-  nominal 1% false-accept rate became 1.7–4.7%;
-- thresholds need empirical calibration;
-- never use differences of the pairwise $\ell$ (§4.3) as SPRT log-likelihood
-  ratios.
+- per-pick values are not capped at 2 bits;
+- the error rates hold only to the extent that impostors' real choices follow
+  $\tilde p_{\text{ref}}$. A specific look-alike's do not, so thresholds need empirical
+  calibration;
+- never use sums of pairwise LLRs (§3.4) as the test statistic.
 
-## 7. Consequences and limits
+## 9. Consequences and limits
 
 - **Display.** Shuffle screen positions server-side, fresh for every
   presentation including repeats. Reveal all four images together. Use opaque
-  per-round image URLs. The predictor never sees position.
-- **Commitment.** Compute and store $p_t$ when the quad is served, then score,
-  then update. Serialise concurrent submissions (two tabs). Never combine a
-  strength and a log-sum-exp from different model versions; a stale
-  normaliser can push $s_t$ above 2.
-- **Versioning.** Scores are comparable only under one predictor version,
+  per-round image URLs. The scorer never sees position.
+- **Order of operations.** Score each pick from the counts as they stand
+  before its own update, then update. Serialise submissions per player × set
+  (two tabs).
+- **Storage.** The scorer needs only the $N \times N$ counts per player × set: three
+  lookups to score a pick, three increments to update. Keep the round log
+  $(Q, x)$, with screen order and estimator version, anyway: for audit, and to
+  re-score under a new estimator.
+- **Versioning.** Scores are comparable only under one estimator version,
   selection policy and set size.
-- **Selection changes the scale.** By §3.4, points = 2 − noise − learning, so
-  "max information" quads deliberately pay less. In simulation, a
-  max-entropy selector cut points about 5× (0.14 against 0.69 bits per pick),
-  and a confidence-seeking selector inflated them (1.34). Score rounds under
-  a fixed policy.
-- **Multiple testing.** §3.5 is per player × set. Anonymous IDs make
-  re-rolling free: with 1000 random-clicking IDs, some ID reached 10 bits in
-  about 30% of simulations. Leaderboards and identity thresholds must account
-  for the number of IDs and sessions. Never discard or retry sessions.
+- **Selection changes the scale.** By §4.4, quads the forecast is unsure about
+  pay less. A "max information" selector serves them on purpose and lowers
+  points; a selector that favours well-known pairs inflates them. Score
+  rounds under a fixed policy.
+- **Multiple testing.** §4.3 is per player × set. Anonymous IDs make
+  re-rolling free: with $M$ random-clicking IDs, the chance that some ID reaches
+  $b$ bits is bounded only by $M \cdot 2^{-b}$, which is 0.98 for 1000 IDs at 10 bits.
+  Leaderboards and identity thresholds must account for the number of IDs
+  and sessions. Never discard or retry sessions.
 - **Consistency is not sincerity.** Any fixed rule on image content ("the
   brightest", a hash of the pixels) is perfectly consistent and earns close to
   2 bits per pick, at machine speed for a bot. Anti-automation (rate limits, a
   minimum response time) is needed from the start, not deferred.
-- **Total order.** "Accumulated matches converge toward a total ordering" is
-  false at the bottom. A consistent player's bottom three images are never
-  picked, and under uniform quads the image fourth from the bottom is picked
-  only when the quad is exactly the bottom four. Ordering the low end needs
-  adaptive quads of similar images.
 - **Changing taste.** Old picks keep full weight, so a player whose taste
-  drifts pays for it for a long time. Discounting old counts
-  ($n \leftarrow \gamma n$ per round) keeps the predictor admissible.
-- **IIA.** Real choices among four can violate Luce's independence of
-  irrelevant alternatives (decoy and compromise effects). The score stays
-  valid; the predictor's calibration (§5's gap) is the thing to watch.
-- **Numerics.** Compute
-  $s_t = \log_2 k - \operatorname{LSE}_{j \in Q_t}(\theta_j - \theta_{x_t})/\ln 2$ (max-shifted log-sum-exp)
-  for each component, and mix in probability space. Then $s_t \le 2$ and
-  $\tfrac1k\sum_x 2^{s(x)} \le 1$ hold to rounding. Reject non-finite strengths.
+  drifts pays for it for a long time. Discounting (§5) fixes this.
+- **Real choices.** Choices among four can break the strength model of §3.1
+  (decoy and compromise effects). The score stays valid, since §4.2 does not
+  use the model; the forecast's calibration (§7's gap) is the thing to watch.
+- **Numerics.** With integer counts, compute the ratio form directly,
+  $s = 2 - \log_2\big(1 + \sum_j (n_{jx}+1)/(n_{xj}+1)\big)$; nothing overflows at realistic counts. With
+  real-valued $L$ (discounting, strengths), shift by the largest exponent:
+  $s = 2 - M_x - \log_2 \sum_{y \in Q} 2^{L_{yx} - M_x}$.
 
 ## References
 
-- Azari Soufiani, H., Parkes, D. C., & Xia, L. (2014). Computing parametric ranking models via rank-breaking. *ICML 2014*, PMLR 32(1), 360–368.
 - Bradley, R. A., & Terry, M. E. (1952). Rank analysis of incomplete block designs: I. The method of paired comparisons. *Biometrika*, 39(3/4), 324–345.
-- Caron, F., & Doucet, A. (2012). Efficient Bayesian inference for generalized Bradley–Terry models. *J. Computational and Graphical Statistics*, 21(1), 174–196.
-- Cover, T. M., & Thomas, J. A. (2006). *Elements of Information Theory*, 2nd ed., ch. 6. Wiley.
-- Dawid, A. P. (1984). Statistical theory: the prequential approach. *JRSS A*, 147(2), 278–292.
-- Gneiting, T., & Raftery, A. E. (2007). Strictly proper scoring rules, prediction, and estimation. *JASA*, 102(477), 359–378.
-- Good, I. J. (1952). Rational decisions. *JRSS B*, 14(1), 107–114.
-- Hauser, J. R. (1978). Testing the accuracy, usefulness, and significance of probabilistic choice models: an information-theoretic approach. *Operations Research*, 26(3), 406–421.
-- Hick, W. E. (1952). On the rate of gain of information. *Q. J. Experimental Psychology*, 4(1), 11–26.
-- Hunter, D. R. (2004). MM algorithms for generalized Bradley–Terry models. *Annals of Statistics*, 32(1), 384–406.
-- Hyman, R. (1953). Stimulus information as a determinant of reaction time. *J. Experimental Psychology*, 45(3), 188–196.
-- Khetan, A., & Oh, S. (2016). Data-driven rank breaking for efficient rank aggregation. *JMLR*, 17(193), 1–54.
+- Cover, T. M., & Thomas, J. A. (2006). *Elements of Information Theory*, 2nd ed. Wiley.
+- Laplace, P.-S. (1814). *Essai philosophique sur les probabilités*. Courcier.
 - Luce, R. D. (1959). *Individual Choice Behavior: A Theoretical Analysis*. Wiley.
-- McFadden, D. (1974). Conditional logit analysis of qualitative choice behavior. In *Frontiers in Econometrics*, 105–142. Academic Press.
-- Ramdas, A., Grünwald, P., Vovk, V., & Shafer, G. (2023). Game-theoretic statistics and safe anytime-valid inference. *Statistical Science*, 38(4), 576–601.
-- Shafer, G., Shen, A., Vereshchagin, N., & Vovk, V. (2011). Test martingales, Bayes factors and p-values. *Statistical Science*, 26(1), 84–101.
-- Varin, C., Reid, N., & Firth, D. (2011). An overview of composite likelihood methods. *Statistica Sinica*, 21(1), 5–42.
 - Ville, J. (1939). *Étude critique de la notion de collectif*. Gauthier-Villars.
 - Wald, A. (1945). Sequential tests of statistical hypotheses. *Annals of Mathematical Statistics*, 16(2), 117–186.
-- Wichmann, F. A., & Hill, N. J. (2001). The psychometric function: I. Fitting, sampling, and goodness of fit. *Perception & Psychophysics*, 63(8), 1293–1313.
