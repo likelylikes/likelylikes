@@ -46,7 +46,10 @@ picks the best. Points come from choosing consistently over time.
   are per player × set. `set_id` is a first-class key throughout.
 - **Image source is maximally decoupled** from the rest of the code (an
   interface; nothing else knows where images come from).
-- *(MVP)* Source: a curated list of AI-generated images.
+- Each set carries the question the player answers, e.g. "Who do you find
+  most beautiful?"
+- *(MVP)* Source: AI-generated images from parameterised templates, curated
+  and frozen into sets of 12–16. See [images.md](images.md).
 
 ## Selection
 
@@ -66,13 +69,14 @@ picks the best. Points come from choosing consistently over time.
 - `wrangler.jsonc` with `$schema`, `observability.enabled`, apex domain via
   `routes` + `custom_domain`, matching sibling sites.
 - **Gate:** `npm run check` — typecheck + unit tests (scoring, ordering,
-  selection) — must pass before deploy.
+  selection) + image manifests ([images.md](images.md) §8) — must pass before
+  deploy.
 
 ## Interfaces (summary)
 
 | Interface      | MVP implementation         |
 |----------------|----------------------------|
-| ImageSource    | curated AI-image list      |
+| ImageSource    | frozen set manifests, files in R2 ([images.md](images.md)) |
 | QuadSelector   | uniform random             |
 | Scorer         | pairwise LLRs from counts, log₂ LR vs random ([scoring.md](scoring.md) §3) |
 
@@ -83,7 +87,8 @@ picks the best. Points come from choosing consistently over time.
 - Definition of the consistency score: proposal in [scoring.md](scoring.md) §7.
 - Account mechanism (magic link vs OAuth) and anonymous → account linking.
 - Privacy and data retention, especially given the identity use case.
-- Image curation workflow and set metadata (tags?).
+- ~~Image curation workflow and set metadata (tags?)~~: see
+  [images.md](images.md).
 - Ranking/leaderboard (deferred), anti-cheat.
 - Use of response time in the model.
 - Identity verification: profile matching, thresholds (SPRT-style). Ceiling
