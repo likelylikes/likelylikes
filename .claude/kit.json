@@ -1,0 +1,12 @@
+{
+  "format": 1,
+  "slices": [
+    "core",
+    "self-improvement",
+    "session-branch"
+  ],
+  "params": {
+    "gate": "bash .claude/vendor/kit/bin/kit check"
+  },
+  "exclude": []
+}

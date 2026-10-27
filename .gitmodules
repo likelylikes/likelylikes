@@ -1,0 +1,3 @@
+[submodule ".claude/vendor/kit"]
+	path = .claude/vendor/kit
+	url = https://github.com/bitsy-services/claude-kit
