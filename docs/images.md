@@ -3,14 +3,16 @@
 Status: design. Resolves *Image sets and sources* and the open question on
 the image curation workflow and set metadata in
 [requirements.md](requirements.md). Defines the first template, portraits of
-women (§6).
+women (§6). The tools that carry it out are specified in
+[image-pipeline.md](image-pipeline.md).
 
 ## Summary
 
 - Images are generated offline, curated, and frozen into sets. Nothing is
   generated at request time.
 - A **template** is a fixed style with named parameter slots. Every image is
-  one template version filled with one value per parameter, plus a seed.
+  one template version filled with one value per parameter. Candidates of
+  the same subject are numbered in the order the model returns them.
 - The accepted images of one template version form a **pool**. A **set** is a
   filter over a pool, frozen into a list of 12 to 16 images.
 - Any parameter can be filtered, ethnicity included. One template serves a
@@ -62,7 +64,7 @@ Each rule follows from [scoring.md](scoring.md).
 | template | a question, a prompt with parameter slots, a model and its settings; versioned |
 | parameter | a named slot with a finite list of values, each with the prompt fragment it inserts |
 | subject | one value for every parameter of a template version |
-| candidate | one generated image of a subject, from one seed |
+| candidate | one generated image of a subject, numbered `c1`, `c2`, … in the order generated |
 | image | a candidate accepted in curation; immutable, named by the SHA-256 of its served file |
 | pool | every image of one template version |
 | filter | for each parameter, the values allowed; a parameter left out allows all |
@@ -74,6 +76,12 @@ A template version fixes everything that is not a parameter: the question,
 the prompt text, the model and its version, the settings and the served size.
 Changing any of them makes a new version with a new pool. Images from
 different template versions never share a set, because their style differs.
+
+Some models take no seed and carry no version in their ID; Grok Imagine is
+one (§9). Then nothing can regenerate an image: the generator's original
+file is the only record of it, which is why §4 keeps it. And the model can
+change without notice, so a pool is generated in one run, by one provider
+and one model.
 
 Parameters are the only things that vary. Each value carries the fragment it
 puts into the prompt. A template may exclude combinations of values that the
@@ -90,8 +98,9 @@ of one.
 1. **Draw subjects.** For every value a set will filter on, draw at least the
    largest N subjects plus a margin for rejects. Spread the other parameters
    evenly within each value. §6.3 gives the first template's design.
-2. **Generate.** Two candidates per subject, from consecutive seeds, with the
-   template's model and settings.
+2. **Generate.** Two candidates per subject, with the template's model and
+   settings, numbered in the order the model returns them. Record the seed or
+   request ID when the model gives one.
 3. **Curate.** Look at each candidate alone, then in a grid with the rest of
    the pool. Reject it if:
    - it has a defect: anatomy, stray text, artefacts, cropping;
@@ -102,12 +111,14 @@ of one.
      said;
    - it resembles a real, recognisable person.
 
-   Accept the **first** candidate in seed order that passes, never the better
-   of two. Choosing between passing candidates would put the curator's taste
-   into the set. A subject whose candidates both fail gets two more seeds.
+   Accept the **first** candidate in number order that passes, never the
+   better of two. Choosing between passing candidates would put the curator's
+   taste into the set. A subject whose candidates both fail gets two more
+   (`c3`, `c4`).
 4. **Tag.** Record what the image shows that the prompt left open, such as
-   hair colour. Tags feed similarity; filters use parameters only, because
-   parameters are controlled and checked in curation.
+   hair colour, from the tags the template declares. Tags feed similarity;
+   filters use parameters only, because parameters are controlled and checked
+   in curation.
 5. **Encode.** Decode the accepted candidate to pixels and re-encode it at the
    template's served size and format. Re-encoding drops all metadata. Keep the
    generator's original as well.
@@ -163,7 +174,8 @@ model's one idea of beauty and narrows the variation the set exists to
 measure. If it is wanted, it goes in the fixed text, the same for every
 image.
 
-Generated square; served at 640 × 640 as WebP. The model is open (§9).
+Generated square; served at 640 × 640 as WebP. The first model to try is
+Grok Imagine through Workers AI (§9).
 
 ### 6.3 Parameters
 
@@ -177,8 +189,9 @@ Provisional values:
 | `hair_texture` | straight, wavy, curly |
 
 Every `age` value is at least 25, and the check enforces it (§8). Facial
-differences come from the seed. Hair colour is left to the model and recorded
-as a tag.
+differences come from the model's own variation. Hair colour is left to the
+model and recorded as the tag `hair_colour`: black, dark brown, light brown,
+blonde, red or grey.
 
 **Design.** Per ethnicity, 18 subjects: each of the 9 hair combinations twice,
 at two different ages, so that each age occurs 6 times. That is 126 subjects
@@ -206,14 +219,18 @@ prerequisite for launching this template, not a later refinement.
 
 ## 7. Records
 
-Manifests are JSON files in git under `images/`. Image files are in R2.
+Manifests are JSON files in git under `images/`; their layout is in
+[image-pipeline.md](image-pipeline.md) §1. Image files are in R2.
 
 | Record | Fields |
 |---|---|
-| template | id, version, question, prompt, parameters (name → values with fragments), exclusions, model (provider, id, version), settings, served width, height and format |
-| image | SHA-256 of the served file, SHA-256 of the original, template id and version, parameter values, seed, tags, width, height, format, bytes |
+| template | id, version, question, prompt, parameters (name → values with fragments), exclusions, tags (name → allowed values), model (provider, id, version if any), settings, served width, height and format |
+| pool design | template id and version, the parameter subjects are drawn per value of, subjects per value, the parameters balanced within each value, shuffle seed |
+| subject | subject ID, parameter values, rendered prompt |
+| generation log | subject ID, candidate number, SHA-256 of the original, provider, model, settings, seed or request ID if any, time |
+| curation log | subject ID, candidate number, decision, reason, note, time |
+| image | SHA-256 of the served file, SHA-256 of the original, template id and version, subject ID, candidate number, parameter values, tags, width, height, format, bytes |
 | set | `set_id`, template id and version, filter, N, selection seed, image hashes, publication date |
-| curation log | template id and version, parameter values, seed, decision, reason |
 
 R2 keys are `served/<sha256>.webp` and `original/<sha256>.<ext>`. The key never
 reaches the client (§1).
@@ -228,7 +245,12 @@ Offline, as part of `npm run check`, from the manifests:
 - every image's parameter values are in its template's lists and not
   excluded;
 - every `age` value is at least 25;
-- every image in a pool has the template's served width, height and format.
+- every image in a pool has the template's served width, height and format;
+- every generation in a pool has the same provider, model and settings;
+- every subject has at most one accepted candidate, and it is the
+  lowest-numbered candidate not rejected (§4, step 3);
+- every image has an accept in the curation log, and every tag value is one
+  its template allows.
 
 Online, before deploy, on every served file of every published set fetched
 from R2:
@@ -239,9 +261,14 @@ from R2:
 
 ## 9. Open questions
 
-- **Model and output terms.** The model must hold one style across subjects,
-  take a seed, and allow this use of its output. nytime5 uses Flux 1.1 Pro on
-  Replicate; it is untested here, and its terms are unchecked.
+- **Model and output terms.** The model must hold one style across subjects
+  and allow this use of its output. First to try: Grok Imagine through
+  Workers AI, `xai/grok-imagine-image`, listed at $0.02 per image, about $5
+  for the first pool's 252 candidates. It takes `n` up to 10, `aspect_ratio`
+  `1:1` and `resolution` `1k`, but no seed, and its ID names no version (§3).
+  The same model is on xAI's own API as `grok-imagine-image-2.0`. nytime5
+  uses Flux 1.1 Pro on Replicate. None is tested here, and no output terms
+  are checked.
 - **Parameter values.** The lists in §6.3, ethnicity especially, are
   provisional.
 - **Privacy.** A prerequisite for the first template (§6.5).
