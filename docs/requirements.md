@@ -86,4 +86,5 @@ picks the best. Points come from choosing consistently over time.
 - Image curation workflow and set metadata (tags?).
 - Ranking/leaderboard (deferred), anti-cheat.
 - Use of response time in the model.
-- Identity verification: profile matching, thresholds (SPRT-style).
+- Identity verification: profile matching, thresholds (SPRT-style). Ceiling
+  on what it can certify: [entropy.md](entropy.md).

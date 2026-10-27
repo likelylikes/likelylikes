@@ -464,7 +464,10 @@ Differences from the game score:
 - the error rates hold only to the extent that impostors' real choices follow
   $\tilde p_{\text{ref}}$. A specific look-alike's do not, so thresholds need empirical
   calibration;
-- never use sums of pairwise LLRs (§3.4) as the test statistic.
+- never use sums of pairwise LLRs (§3.4) as the test statistic;
+- what a session can certify is capped. For consistent players it is at
+  most $\log_2(N!/3!)$ bits, and $2T$ bits in $T$ picks when quads are
+  chosen without the claimed template. See [entropy.md](entropy.md).
 
 ## 9. Consequences and limits
 
