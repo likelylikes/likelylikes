@@ -1,0 +1,50 @@
+{
+  "id": "women-portraits",
+  "version": 1,
+  "question": "Who do you find most beautiful?",
+  "prompt": "Head-and-shoulders portrait photograph of a {age}-year-old {ethnicity} woman with {hair_length} {hair_texture} hair, facing the camera at eye level, relaxed expression with a slight closed-mouth smile, minimal natural makeup, no jewellery, no glasses, plain heather-grey crew-neck t-shirt, plain off-white background, soft even frontal lighting, natural skin texture, not retouched, 85mm lens, centred with a small margin above the hair",
+  "parameters": {
+    "ethnicity": {
+      "east-asian": "East Asian",
+      "southeast-asian": "Southeast Asian",
+      "south-asian": "South Asian",
+      "middle-eastern": "Middle Eastern",
+      "black": "Black",
+      "european": "European",
+      "latina": "Latina"
+    },
+    "age": {
+      "27": "27",
+      "33": "33",
+      "39": "39"
+    },
+    "hair_length": {
+      "short": "short",
+      "shoulder-length": "shoulder-length",
+      "long": "long"
+    },
+    "hair_texture": {
+      "straight": "straight",
+      "wavy": "wavy",
+      "curly": "curly"
+    }
+  },
+  "exclusions": [],
+  "tags": {
+    "hair_colour": ["black", "dark-brown", "light-brown", "blonde", "red", "grey"]
+  },
+  "model": {
+    "provider": "xai",
+    "id": "grok-imagine",
+    "version": null
+  },
+  "settings": {
+    "aspect_ratio": "1:1",
+    "n": 2
+  },
+  "served": {
+    "width": 640,
+    "height": 640,
+    "format": "webp"
+  }
+}

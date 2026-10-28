@@ -54,15 +54,18 @@ The scripts are Node and TypeScript under `tools/images/`, run as
 Reads the template and `design.json`, writes `subjects.jsonl`.
 
 - For each value of the design's stratifying parameter (`ethnicity` for the
-  first template), choose the design's number of subjects from the
-  combinations of the balanced parameters, minus the template's exclusions.
-  Each value of each balanced parameter appears equally often, to within one,
-  and no combination repeats until every combination has appeared once. A
-  shuffle seeded from the design breaks ties, so the output is reproducible.
+  first template), choose that value's number of subjects, from `per_value`,
+  out of the combinations of the balanced parameters, minus the template's
+  exclusions. A value not in `per_value` gets none yet. Each value of each
+  balanced parameter appears equally often, to within one, and no
+  combination repeats until every combination has appeared once. A shuffle
+  seeded from the design breaks ties.
+- Number the subjects in shuffled order, not by parameter, so that drift
+  during generation does not line up with any parameter.
 - Render each prompt by replacing every `{name}` with its value's fragment.
   An unknown or unfilled slot is an error.
-- Refuses to run once `subjects.jsonl` exists, unless `--add k` appends
-  `k` subjects per value with new IDs.
+- Never rewrites an existing subject. Raising a count in `per_value`, or
+  adding a value, appends the new subjects with new IDs.
 
 A line: `{"subject":"s017","values":{"ethnicity":"black","age":"33","hair_length":"long","hair_texture":"curly"},"prompt":"Head-and-shoulders portrait photograph of a 33-year-old Black woman with long curly hair, …"}`
 
@@ -175,8 +178,9 @@ images.md §8 is the definition. The offline part runs inside
 `npm run check:r2` before every deploy, against the objects in R2. Beyond §8,
 the offline part checks that:
 
-- `subjects.jsonl` matches what `subjects` would produce from the template
-  and design;
+- every subject's prompt is its template rendered with its values;
+- each value's subjects meet the design: the count in `per_value`, and the
+  balance rule of §2.1;
 - every candidate file named in an image record is in `generations.jsonl`.
 
 ## 4. Open questions

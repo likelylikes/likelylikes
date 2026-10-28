@@ -183,7 +183,7 @@ Provisional values:
 
 | Parameter | Values |
 |---|---|
-| `ethnicity` | East Asian, Southeast Asian, South Asian, Middle Eastern, Black, White, Latina |
+| `ethnicity` | East Asian, Southeast Asian, South Asian, Middle Eastern, Black, European, Latina |
 | `age` | 27, 33, 39 |
 | `hair_length` | short, shoulder-length, long |
 | `hair_texture` | straight, wavy, curly |
