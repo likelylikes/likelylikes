@@ -187,10 +187,15 @@ the offline part checks that:
 
 - **Workers AI with `n` > 1.** Cloudflare's listing shows a response with one
   image URL. How several images come back is untested.
-- **Model drift.** `xai/grok-imagine-image` names no version, and neither
-  does the app. A change partway through a pool shows only as a style shift in
-  the pool view. Generating a pool in one run keeps the window small; nothing
-  closes it.
+- **Model drift.** On Workers AI, `xai/grok-imagine-image` names no version
+  and its response names no serving model; the app names none either. A
+  change partway through a pool then shows only as a style shift in the pool
+  view, and generating a pool in one run keeps the window small. xAI's own API
+  closes the gap: the dated alias `grok-imagine-image-2026-03-02` "will not be
+  updated", and each response names the model that served it. FLUX 3 has no
+  such fix: `latest` is its only version, and BFL changed the model in place
+  after launch ([image-variability.md](image-variability.md) §5).
 - **App downloads.** Whether the Grok app downloads at full size, as one file
   per image, and with what file names is unverified.
-- **Output terms** for this use, for every provider: unchecked.
+- **Output terms** for this use: partly read, none reviewed by a lawyer; see
+  [image-variability.md](image-variability.md) §5.

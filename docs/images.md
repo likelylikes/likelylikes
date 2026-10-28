@@ -77,11 +77,11 @@ the prompt text, the model and its version, the settings and the served size.
 Changing any of them makes a new version with a new pool. Images from
 different template versions never share a set, because their style differs.
 
-Some models take no seed and carry no version in their ID; Grok Imagine is
-one (§9). Then nothing can regenerate an image: the generator's original
-file is the only record of it, which is why §4 keeps it. And the model can
-change without notice, so a pool is generated in one run, by one provider
-and one model.
+Some models take no seed and carry no version in their ID; Grok Imagine
+through Workers AI is one (§9). Then nothing can regenerate an image: the
+generator's original file is the only record of it, which is why §4 keeps
+it. And the model can change without notice, so a pool is generated in one
+run, by one provider and one model.
 
 Parameters are the only things that vary. Each value carries the fragment it
 puts into the prompt. A template may exclude combinations of values that the
@@ -266,11 +266,20 @@ from R2:
   Workers AI, `xai/grok-imagine-image`, listed at $0.02 per image, about $5
   for the first pool's 252 candidates. It takes `n` up to 10, `aspect_ratio`
   `1:1` and `resolution` `1k`, but no seed, and its ID names no version (§3).
-  The same model is on xAI's own API as `grok-imagine-image-2.0`. nytime5
-  uses Flux 1.1 Pro on Replicate. None is tested here, and no output terms
-  are checked.
+  On xAI's own API it is `grok-imagine-image`, which xAI calls version 1.0,
+  with the dated alias `grok-imagine-image-2026-03-02`;
+  `grok-imagine-image-2.0` is a separate model at $0.04. nytime5 uses Flux
+  1.1 Pro on Replicate. None is tested here. The output terms found so far
+  are in [image-variability.md](image-variability.md) §5.
 - **Parameter values.** The lists in §6.3, ethnicity especially, are
   provisional.
+- **Facial variation.** §6.3 assumes faces differ by the model's own
+  variation. Six FLUX 3 trials, judged by eye, came out alike, and published
+  measurements of earlier models, FLUX.1 [dev] above all, find generated faces
+  less varied than real ones; FLUX 3 and Grok Imagine are unmeasured.
+  [image-variability.md](image-variability.md) proposes declared colour and
+  face-shape parameters, a look-alike reject rule and apparent-age
+  measurement.
 - **Privacy.** A prerequisite for the first template (§6.5).
 - **Sharing counts between sets.** Pairwise counts belong to a pair of images,
   not to a set, so a player's counts from a single-ethnicity set could
@@ -281,8 +290,14 @@ from R2:
   the generator and model, with an AI-disclosure assertion but not the
   prompt. Re-encoding (§4, step 5) removes it, and a re-encoded file could
   not keep it valid anyway, since the manifest is bound to the original's
-  bytes. The originals in R2 keep it. Whether the game must disclose AI
-  generation some other way, such as on the page, is unchecked.
+  bytes. The originals in R2 keep it. BFL's Developer Terms forbid removing
+  Content Credentials from API output, so for any BFL model §4 step 5 and the
+  §8 rule against C2PA in served files breach them. xAI's acceptable-use
+  policy, read only in a secondary capture, bars stripping provenance
+  metadata; Cloudflare's Grok 1.0 examples carry none, so for 1.0 the conflict
+  is unverified. The terms found forbid presenting output as human-made;
+  whether law requires a label on the page is unchecked
+  ([image-variability.md](image-variability.md) §5).
 - **Fresh sets for revocation.** A leaked template is revoked by enrolling on
   a fresh set, assuming tastes in different sets are independent
   ([entropy.md](entropy.md) §7). A new batch of subjects under the same
