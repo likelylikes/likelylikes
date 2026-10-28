@@ -277,6 +277,12 @@ from R2:
   warm-start the mixed set. That would change the per-set rule in
   [requirements.md](requirements.md) and the comparability of scores
   (scoring §9).
+- **AI disclosure.** FLUX 3's output carries a signed C2PA manifest naming
+  the generator and model, with an AI-disclosure assertion but not the
+  prompt. Re-encoding (§4, step 5) removes it, and a re-encoded file could
+  not keep it valid anyway, since the manifest is bound to the original's
+  bytes. The originals in R2 keep it. Whether the game must disclose AI
+  generation some other way, such as on the page, is unchecked.
 - **Fresh sets for revocation.** A leaked template is revoked by enrolling on
   a fresh set, assuming tastes in different sets are independent
   ([entropy.md](entropy.md) §7). A new batch of subjects under the same

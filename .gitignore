@@ -147,3 +147,6 @@ vite.config.ts.timestamp-*
 
 # Turbo Repo
 .turbo
+
+# Image pipeline working files (docs/image-pipeline.md §1)
+work/
