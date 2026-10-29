@@ -34,16 +34,18 @@
     "hair_colour": ["black", "dark-brown", "light-brown", "blonde", "red", "grey"]
   },
   "model": {
-    "provider": "xai",
-    "id": "grok-imagine",
+    "provider": "workers-ai",
+    "id": "xai/grok-imagine-image",
     "version": null
   },
   "settings": {
-    "aspect_ratio": "1:1"
+    "aspect_ratio": "1:1",
+    "resolution": "1k"
   },
-  "size": {
+  "served": {
     "width": 640,
     "height": 640,
-    "format": null
+    "format": "webp",
+    "quality": 85
   }
 }

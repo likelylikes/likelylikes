@@ -12,7 +12,7 @@ women (§6). The tools that carry it out are specified in
   generated at request time.
 - A **template** is a fixed style with named parameter slots. Every image is
   one template version filled with one value per parameter. Candidates of
-  the same subject are numbered in the order the model returns them.
+  the same subject are numbered in the order generated.
 - The accepted images of one template version form a **pool**. A **set** is a
   filter over a pool, frozen into a list of 12 to 16 images.
 - Any parameter can be filtered, ethnicity included. One template serves a
@@ -20,8 +20,10 @@ women (§6). The tools that carry it out are specified in
 - No image in a set may be clearly worse than the rest. Only the parameters
   vary; curation rejects defects, style outliers and images that do not show
   their parameters.
-- Images are generated at the size they are served and served exactly as
-  generated, metadata included: one size and one file format per pool.
+- Served images are scaled down from the generator's file by a tool that
+  keeps its C2PA provenance: one size and one format per pool, each file
+  signed with a record of the resize that carries the generator's manifest
+  where it wrote one.
 - Manifests live in git, image files in R2 under their content hash. A check
   fails the build on a set that breaks these rules (§8).
 
@@ -55,7 +57,7 @@ Each rule follows from [scoring.md](scoring.md).
   channel. Players never see it, and a prompt in the file would tell a script
   nothing the pixels do not, since every accepted image shows its parameters
   (§4, step 3); any rule on content is open to a script anyway (scoring §9).
-  Files are served as generated, metadata included (§4, step 5).
+  Served files keep the generator's provenance (§4, step 5).
 - **Similarity comes free.** Ordering the bottom of a player's list needs
   quads of similar images (scoring §6). Parameter values and curation tags
   (§4) give a similarity measure without extra work.
@@ -68,7 +70,7 @@ Each rule follows from [scoring.md](scoring.md).
 | parameter | a named slot with a finite list of values, each with the prompt fragment it inserts |
 | subject | one value for every parameter of a template version |
 | candidate | one generated image of a subject, numbered `c1`, `c2`, … in the order generated |
-| image | a candidate accepted in curation; immutable, named by the SHA-256 of its file, which is served as generated |
+| image | a candidate accepted in curation; immutable, named by the SHA-256 of its served file |
 | pool | every image of one template version |
 | filter | for each parameter, the values allowed; a parameter left out allows all |
 | set | a filter, a size N, and the N pool images it selected; keyed by `set_id` |
@@ -76,15 +78,13 @@ Each rule follows from [scoring.md](scoring.md).
 ## 3. Templates
 
 A template version fixes everything that is not a parameter: the question,
-the prompt text, the model and its version, the settings, and the image's
-size and file format. Changing any of them makes a new version with a new
-pool; a version that has generated nothing may be amended in place. Images
-from different template versions never share a set, because their style
-differs.
+the prompt text, the model and its version, the settings, and the served size
+and format. Changing any of them makes a new version with a new pool; a
+version that has generated nothing may be amended in place. Images from
+different template versions never share a set, because their style differs.
 
-Images are generated at the size they are served and never converted, so the
-size must be one the model produces exactly, and the format is the one the
-model and settings return. The template states both, to check against.
+The model generates a square at one of its own sizes, set in the settings
+and at least as large as the served size; §4 scales it down.
 
 Some models take no seed and carry no version in their ID; Grok Imagine
 through Workers AI is one (§9). Then nothing can regenerate an image: the
@@ -107,14 +107,14 @@ of one.
 1. **Draw subjects.** For every value a set will filter on, draw at least the
    largest N subjects plus a margin for rejects. Spread the other parameters
    evenly within each value. §6.3 gives the first template's design.
-2. **Generate.** Two candidates per subject, with the template's model,
-   settings and size, numbered in the order generated. Record each file's
-   width, height and format, and the seed or request ID when the model gives
-   one.
+2. **Generate.** Two candidates per subject, with the template's model and
+   settings, numbered in the order generated. Record each file's width,
+   height and format, and the seed or request ID when the model gives one.
 3. **Curate.** Look at each candidate alone, then in a grid with the rest of
    the pool. Reject it if:
-   - it has a defect: anatomy, stray text, artefacts, cropping, or a size or
-     format other than the template's, which the tools reject before the
+   - it has a defect: anatomy, stray text, artefacts, cropping, or a file
+     that is not square, is smaller than the served size, or differs in size
+     from the pool's other candidates, which the tools reject before the
      curator sees it;
    - it is a style outlier: lighting, colour, background, clothing or framing
      differ from the pool;
@@ -131,13 +131,20 @@ of one.
    hair colour, from the tags the template declares. Tags feed similarity;
    filters use parameters only, because parameters are controlled and checked
    in curation.
-5. **Keep as generated.** The accepted candidate's file is the image, byte
-   for byte. Nothing decodes, resizes or re-encodes it, so the generator's
-   provenance metadata, such as FLUX's signed C2PA manifest, stays valid.
-   BFL's terms forbid removing it
-   ([image-variability.md](image-variability.md) §5).
-6. **Store.** Upload the file to R2 under its SHA-256 and add the image to the
-   pool manifest (§7).
+5. **Resize, keeping provenance.** Convert the accepted candidate to the
+   template's served size, format and quality. Then sign a new C2PA manifest
+   for the result, with the generator's file as its parent ingredient,
+   carrying the generator's manifest unchanged where there is one, and the
+   resize and conversion recorded as a transcoding. Players receive the
+   generator's manifest intact, with its signature verifiable; that it
+   describes this image rests on our signed record of the resize, because a
+   manifest carried as an ingredient cannot have its binding to the
+   original's pixels checked. BFL's terms forbid removing it
+   ([image-variability.md](image-variability.md) §5). Keep the generator's
+   file as well. A published image is never re-encoded: a new encoder or a
+   new signature gives new bytes, and new bytes are a new image.
+6. **Store.** Upload both files to R2 under their SHA-256 and add the image to
+   the pool manifest (§7).
 
 Rejected candidates are logged with their reason. Their files are not kept.
 
@@ -188,16 +195,9 @@ model's one idea of beauty and narrows the variation the set exists to
 measure. If it is wanted, it goes in the fixed text, the same for every
 image.
 
-Generated and served at 640 × 640, in the file format the model returns. That
-needs a model that takes a width and height: FLUX 3 Image and FLUX 3 Image
-Klein on BFL's API, or FLUX.2. The FLUX MCP server used for the trials offers
-FLUX 3 only at preset sizes, the smallest square being 768 × 768, and
-FLUX1.1 [pro] Ultra takes only an aspect ratio. Grok Imagine, the first model
-to try (§9), generates only at fixed resolutions (`1k` and `2k` on Workers AI,
-also `1.5k` on xAI's API; `2k` is an upscaled `1k`), whose pixel sizes are
-unmeasured. The v1 template pairs Grok with 640 × 640 and names no format. v1
-has generated nothing, so its model or its size is amended in place before it
-does, and its format set to what that model returns.
+Served at 640 × 640 as WebP, scaled down from the model's own square output
+(§4, step 5). The first model to try is Grok Imagine through Workers AI (§9),
+at its `1k` resolution; its `2k` is an upscaled `1k`.
 
 ### 6.3 Parameters
 
@@ -246,16 +246,17 @@ Manifests are JSON files in git under `images/`; their layout is in
 
 | Record | Fields |
 |---|---|
-| template | id, version, question, prompt, parameters (name → values with fragments), exclusions, tags (name → allowed values), model (provider, id, version if any), settings, size (width, height, file format) |
+| template | id, version, question, prompt, parameters (name → values with fragments), exclusions, tags (name → allowed values), model (provider, id, version if any), settings, served width, height, format and quality |
 | pool design | template id and version, the parameter subjects are drawn per value of, subjects per value, the parameters balanced within each value, shuffle seed |
 | subject | subject ID, parameter values, rendered prompt |
 | generation log | subject ID, candidate number, SHA-256, width, height and format of the file, provider, model, settings, seed or request ID if any, time |
-| curation log | subject ID, candidate number, decision, reason, note, time |
-| image | SHA-256 of the file, template id and version, subject ID, candidate number, parameter values, tags, width, height, format, bytes |
+| curation log | subject ID, candidate number, decision, reason, note, tags on an accept, time |
+| image | SHA-256 of the served file and of the original, template id and version, subject ID, candidate number, parameter values, tags, served width, height, format and bytes, encoder and its version |
 | set | `set_id`, template id and version, filter, N, selection seed, image hashes, publication date |
 
-The R2 key is `image/<sha256>`, and the object carries its content type, set
-at upload from the image's format. The key never reaches the client (§1).
+R2 keys are `served/<sha256>` and `original/<sha256>`; each object carries its
+content type, set at upload from the file's format. The key never reaches
+the client (§1).
 
 ## 8. The check
 
@@ -267,24 +268,36 @@ Offline, as part of `npm run check`, from the manifests:
 - every image's parameter values are in its template's lists and not
   excluded;
 - every `age` value is at least 25;
-- every image has its template's width, height and format;
-- every image's SHA-256 is the one the generation log recorded for its
-  candidate, so the image is the file that was generated;
+- every image's served file has its template's served width, height and
+  format;
+- every image's original has the SHA-256 the generation log recorded for its
+  candidate, and is square and at least the served size;
+- every original in a pool has the same width and height, and every served
+  file was encoded at the template's quality by one encoder version;
 - every generation in a pool has the same provider, model and settings;
 - every subject has at most one accepted candidate, and it is the
   lowest-numbered candidate not rejected (§4, step 3);
 - every image has an accept in the curation log, every accept has an image,
-  and every tag value is one its template allows.
+  and every tag value is one its template allows;
+- an image whose candidate was rejected after it was encoded is withdrawn,
+  and no set holds it.
 
-Online, before deploy, on every served file of every published set fetched
-from R2:
+Online, before deploy, on every served file and original of every published
+set fetched from R2:
 
 - its SHA-256 matches its key;
-- its decoded size and format match the manifest;
-- where the pool's model writes a C2PA manifest, the manifest validates with
-  no hash-binding error, which proves the bytes are the ones the generator
-  signed. Only the binding is checked, not trust in the signer: some
-  generators sign with certificates no trust list holds.
+- the served file's decoded size and format match its image record (§7);
+- the served file's manifest store is valid: our claim signature verifies
+  against our own certificate authority, the check's only trust anchor, and
+  was made, by its time-stamp, while our certificate was valid; the
+  generator's manifest may come from a signer the check does not trust, but
+  must otherwise validate;
+- its parent ingredient is the original: the ingredient's instance ID is the
+  original's SHA-256, and where the original carries a manifest, the
+  ingredient carries that same manifest;
+- the original, decoded and scaled as `encode` scales it, matches the served
+  file's pixels within a fixed bound, since the encoder is lossy;
+- the served file's own manifest holds no thumbnail.
 
 After deploy, one image of every published set, fetched through the Worker as
 a client fetches it, has the SHA-256 of its key. Nothing between R2 and the
@@ -321,9 +334,9 @@ metadata, so no image optimisation applies to the image route.
   (scoring §9).
 - **AI disclosure.** FLUX 3's output carries a signed C2PA manifest naming
   the generator and model, with an AI-disclosure assertion but not the
-  prompt. Files are served as generated (§4, step 5), so players receive it
-  intact, as BFL's Developer Terms require. Cloudflare's Grok 1.0 examples
-  carry no manifest. The terms found forbid presenting output as human-made;
+  prompt. Served files carry it inside the resize manifest (§4, step 5), as
+  BFL's Developer Terms require. Cloudflare's Grok 1.0 examples carry no
+  manifest. The terms found forbid presenting output as human-made;
   whether law requires a label on the page is unchecked
   ([image-variability.md](image-variability.md) §5).
 - **Fresh sets for revocation.** A leaked template is revoked by enrolling on
@@ -331,17 +344,24 @@ metadata, so no image optimisation applies to the image route.
   ([entropy.md](entropy.md) §7). A new batch of subjects under the same
   template makes a fresh set cheaply, but the same player likely favours the
   same features in it, so the assumption is weakest exactly there.
-- **Served size and format.** 640 × 640 is a default, not a measurement.
-  Files are served as the model returns them. FLUX 3 Image takes no output
-  format and returned PNG in the trials; at 640 × 640 that would be roughly
-  0.6 MB a file *(inference, scaled from the 1.6 MB trials at 1024 px)*.
-  Per-round URLs keep the browser from caching, so each round downloads four
-  files, and sessions are timed, so download time costs picks. Either the
-  client fetches the next round while the current one is shown, where the
-  selection rule allows it, or the pool uses a model with a lossy
-  `output_format` (FLUX 3 Klein: JPEG; FLUX.2: JPEG or WebP). A third way
-  would give up byte-for-byte serving: Cloudflare Images, with
-  [Preserve Content Credentials](https://developers.cloudflare.com/images/optimization/hosted-images/preserve-content-credentials/)
-  on, keeps a source image's C2PA manifest and signs an added record of its
-  own resizing or format conversion. Whether that satisfies BFL's terms, and
-  whether it covers images served from R2 through a Worker, is unchecked.
+- **Served size and format.** 640 × 640 WebP at quality 85 is a default, not
+  a measurement. Per-round URLs keep the browser from caching, so each round
+  downloads four files, and sessions are timed, so download time costs
+  picks. Each served file also carries the C2PA manifests: about 22 KB for
+  FLUX's in the s001 trial, plus our certificate chain and time-stamp.
+- **Signing certificate.** The C2PA tools will not sign with a self-signed
+  certificate. Ours is an end-entity certificate issued by a certificate
+  authority of our own: an ES256 key for digital signatures, the
+  document-signing extended key usage, and a subject naming the project,
+  since every verifier shows it. Only the private key stays outside the
+  repo; the authority's certificate is public and committed, so the check
+  needs nothing else. Every signature carries an RFC 3161 time-stamp from a
+  public time-stamp authority, as BFL's do, so a manifest stays valid after
+  our certificate expires; a published image can never be re-signed.
+  Verifiers outside the check show our signer as unrecognised. A certificate
+  they trust comes only from an authority on the C2PA trust list, which
+  issues to products that pass the C2PA conformance programme; that was not
+  looked into. Cloudflare Images can do the same resize with
+  [Preserve Content Credentials](https://developers.cloudflare.com/images/optimization/hosted-images/preserve-content-credentials/),
+  signing with Cloudflare's certificate, but that is documented only for
+  images it hosts.

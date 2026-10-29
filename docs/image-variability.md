@@ -45,9 +45,9 @@ none exists. Sources are listed by section at the end.
   never on face identity across subjects. Not recommended (§3).
 - Two findings outside variability, both now handled (§5). BFL's Developer
   Terms forbid removing the C2PA credentials its API output carries, which
-  the design used to strip; images are now generated at the size they are
-  served and served unchanged, so the credentials stay. And images.md §9
-  named the wrong Grok model; now corrected.
+  the design used to strip; the resize now signs a new manifest that carries
+  them inside, so they stay. And images.md §9 named the wrong Grok model;
+  now corrected.
 
 ## 1. Why the trials look alike
 
@@ -313,8 +313,8 @@ concept (ConceptMix: DALL-E 3 rendered every requested concept in 83% of
 images with one, 17% with five). FLUXSynID found nose shape "inconsistently
 realized" on FLUX.1 [dev], and SD 2.1 could not render freckles at all
 (SDFD). No benchmark found tests face shape on current models. Pilot each
-value; promote to a filterable parameter only values that render at the
-template's size, and use at most two face descriptors per subject.
+value; promote to a filterable parameter only values that survive at the
+served size, and use at most two face descriptors per subject.
 
 Wording: neutral, measurable words, never evaluative ones ("plain",
 "striking", "petite") and nothing that reads as youth ("young", "youthful",
@@ -458,11 +458,10 @@ No measurement of face diversity or age fidelity was found for FLUX 3, current
 Grok Imagine or most models now offered. Run the same 16–24 subjects, with the
 §4.1 parameters, through three to five models; rank them on the §4.3 and §4.4
 measures, then apply the style and parity rules. That keeps the curator's taste
-out of the choice. Images are served as generated (images.md §4), so a model
-must produce the template's size exactly, and every pilot and test image is
-generated at that size: BFL notes that changing the resolution makes a new
-generation, so faces and ages seen at one size need not hold at another.
-Controls and prices read 2026-10-28:
+out of the choice. Generate pilot and test images with the settings the pool
+will use: BFL notes that changing the resolution makes a new generation, so
+faces and ages seen at one resolution need not hold at another. Controls and
+prices read 2026-10-28:
 
 | Model | Per image | Sizes | Seed | Rewrites prompts | Rewrite returned | Version pinned |
 |---|---|---|---|---|---|---|
@@ -475,16 +474,16 @@ Controls and prices read 2026-10-28:
 | Grok Imagine 1.0, xAI API | $0.02 | `1k`, `1.5k`, `2k` | no | assumed | no | yes: `grok-imagine-image-2026-03-02` |
 | FLUX.2 [klein] Base 4B, self-hosted | GPU time | any | yes | no | not needed | yes: fixed weights |
 
-Of these, only the width × height models can make 640 × 640. The FLUX MCP
-server used for the trials offers FLUX 3 only at preset sizes, the smallest
-square being 768 × 768.
+Every model here can make a square of at least 640 px, which `encode` scales
+down to the served size (images.md §4 step 5). *(Inference for Grok Imagine:
+the pixel size of its `1k` is unmeasured.)*
 
 Settings the sources support:
 
-- **FLUX 3:** `grounding: false` for invented people, `width` and `height` set
-  to the template's size (whether `aspect_ratio` may be sent with them is
-  untested), `result.prompt` logged with every candidate, and a reject for any
-  candidate whose rewrite dropped or changed a declared value.
+- **FLUX 3:** `grounding: false` for invented people, `aspect_ratio: "1:1"`
+  and `resolution: "1k"` stated explicitly (1024 × 1024 in the trials),
+  `result.prompt` logged with every candidate, and a reject for any candidate
+  whose rewrite dropped or changed a declared value.
 - **Grok Imagine:** `aspect_ratio: "1:1"` stated explicitly (`auto` brings in a
   "thinking upsampler"), `n: 1` until `n` > 1 is tested on Workers AI, whose
   output schema holds one image, and no `quality` field, which xAI documents
@@ -512,8 +511,12 @@ open weights are the only route where both the weights and the seed stay fixed.
   so a prompt in the file tells a script nothing its pixels do not; and any
   rule on content is open to a script anyway (scoring §9). None of the outputs
   examined, FLUX 3's or Grok 2.0's, carries the prompt. Resolved on
-  2026-10-28: images are generated at the size they are served and served
-  byte for byte, so the credentials reach players intact.
+  2026-10-28: the resize signs a new C2PA manifest that carries the
+  generator's manifest unchanged as its ingredient (images.md §4 step 5), so
+  the credentials reach players intact, with their signature verifiable;
+  that they describe the served image rests on our signed record of the
+  resize. The terms say nothing about edits; this reading of them was not
+  put to BFL.
 - **AI disclosure.** BFL's Developer Terms §6(i)(ii) and xAI's Enterprise
   Terms (secondary capture) forbid presenting output as human-made; xAI's
   acceptable-use policy (also secondary) bars "not being transparent regarding
@@ -588,8 +591,8 @@ Then a template v2 (images.md §6) and the new reject reasons and checks
   one request vary less than images from separate requests?
 - **Private taste in a forced choice.** No study found measures it. The game
   itself must, or a norming panel run as four-way picks rather than ratings.
-- **Face-shape words.** Do they render on FLUX 3 or Grok at the template's
-  size, and keep parity?
+- **Face-shape words.** Do they render on FLUX 3 or Grok, survive at the
+  served size, and keep parity?
 - **Colour frequencies** for East, Southeast and South Asian, Middle Eastern
   and African populations: only allele frequencies were found.
 - **Hair texture and ethnicity.** Whether the models tie them: no literature
