@@ -39,12 +39,11 @@
     "version": null
   },
   "settings": {
-    "aspect_ratio": "1:1",
-    "n": 2
+    "aspect_ratio": "1:1"
   },
-  "served": {
+  "size": {
     "width": 640,
     "height": 640,
-    "format": "webp"
+    "format": null
   }
 }

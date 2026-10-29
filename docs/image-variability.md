@@ -43,11 +43,11 @@ none exists. Sources are listed by section at the end.
   plain particle guidance cost prompt adherence or image quality on FLUX; the
   cheaper ones were measured only on generic diversity within one prompt,
   never on face identity across subjects. Not recommended (§3).
-- Two findings outside variability need action (§5). BFL's Developer Terms
-  forbid removing the C2PA credentials that its API output carries, which
-  images.md §4 step 5 and §8 strip; xAI's policy, read only in a secondary
-  capture, says the same, though Grok 1.0's example outputs carry no C2PA.
-  And images.md §9 named the wrong Grok model; now corrected.
+- Two findings outside variability, both now handled (§5). BFL's Developer
+  Terms forbid removing the C2PA credentials its API output carries, which
+  the design used to strip; images are now generated at the size they are
+  served and served unchanged, so the credentials stay. And images.md §9
+  named the wrong Grok model; now corrected.
 
 ## 1. Why the trials look alike
 
@@ -313,8 +313,8 @@ concept (ConceptMix: DALL-E 3 rendered every requested concept in 83% of
 images with one, 17% with five). FLUXSynID found nose shape "inconsistently
 realized" on FLUX.1 [dev], and SD 2.1 could not render freckles at all
 (SDFD). No benchmark found tests face shape on current models. Pilot each
-value; promote to a filterable parameter only values that render and survive
-at 640 px, and use at most two face descriptors per subject.
+value; promote to a filterable parameter only values that render at the
+template's size, and use at most two face descriptors per subject.
 
 Wording: neutral, measurable words, never evaluative ones ("plain",
 "striking", "petite") and nothing that reads as youth ("young", "youthful",
@@ -358,7 +358,7 @@ AuraFace and SFace do not document their training data, and SFace's code base
 trains only on web-crawled celebrity datasets; dlib's was trained on about 3
 million faces from FaceScrub, the VGG dataset and scraped images. Detect with
 OpenCV's YuNet (MIT), which finds faces about 10–300 px across, so downscale
-the 1024 px originals first. All of these run on CPU. Node runs ONNX models
+a copy of each portrait for detection first. All of these run on CPU. Node runs ONNX models
 through `onnxruntime-node`, but the detection and alignment steps would need
 porting.
 
@@ -458,24 +458,33 @@ No measurement of face diversity or age fidelity was found for FLUX 3, current
 Grok Imagine or most models now offered. Run the same 16–24 subjects, with the
 §4.1 parameters, through three to five models; rank them on the §4.3 and §4.4
 measures, then apply the style and parity rules. That keeps the curator's taste
-out of the choice. Controls and prices read 2026-10-28:
+out of the choice. Images are served as generated (images.md §4), so a model
+must produce the template's size exactly, and every pilot and test image is
+generated at that size: BFL notes that changing the resolution makes a new
+generation, so faces and ages seen at one size need not hold at another.
+Controls and prices read 2026-10-28:
 
-| Model | Per image | Seed | Rewrites prompts | Rewrite returned | Version pinned |
-|---|---|---|---|---|---|
-| FLUX 3 Image, BFL API | $0.048 at 1k | no | always | yes, `result.prompt` | no: `latest` only |
-| FLUX 3 Image Klein, BFL API | $0.009 at 1k | yes | yes; no switch in the schema | not documented | not documented |
-| FLUX.2 [pro], BFL API | not checked | yes | unless `disable_pup` | not needed when off | not documented |
-| FLUX.2 [pro] preview, Workers AI | $0.03 per first megapixel | yes | presumably; `disable_pup` cannot be passed | not checked | no: "tracks the latest" |
-| FLUX1.1 [pro] Ultra raw, BFL API | about $0.06, unconfirmed | yes | off by default | not needed when off | not documented |
-| Grok Imagine 1.0, Workers AI | $0.02 | no | assumed | no | no |
-| Grok Imagine 1.0, xAI API | $0.02 | no | assumed | no | yes: `grok-imagine-image-2026-03-02` |
-| FLUX.2 [klein] Base 4B, self-hosted | GPU time | yes | no | not needed | yes: fixed weights |
+| Model | Per image | Sizes | Seed | Rewrites prompts | Rewrite returned | Version pinned |
+|---|---|---|---|---|---|---|
+| FLUX 3 Image, BFL API | $0.048 at 1k | any width × height, 256–6256 px | no | always | yes, `result.prompt` | no: `latest` only |
+| FLUX 3 Image Klein, BFL API | $0.009 at 1k | any width × height, 64–6256 px | yes | yes; no switch in the schema | not documented | not documented |
+| FLUX.2 [pro], BFL API | not checked | width × height | yes | unless `disable_pup` | not needed when off | not documented |
+| FLUX.2 [pro] preview, Workers AI | $0.03 per first megapixel | width × height | yes | presumably; `disable_pup` cannot be passed | not checked | no: "tracks the latest" |
+| FLUX1.1 [pro] Ultra raw, BFL API | about $0.06, unconfirmed | aspect ratio only | yes | off by default | not needed when off | not documented |
+| Grok Imagine 1.0, Workers AI | $0.02 | `1k`, `2k` (an upscaled `1k`) | no | assumed | no | no |
+| Grok Imagine 1.0, xAI API | $0.02 | `1k`, `1.5k`, `2k` | no | assumed | no | yes: `grok-imagine-image-2026-03-02` |
+| FLUX.2 [klein] Base 4B, self-hosted | GPU time | any | yes | no | not needed | yes: fixed weights |
+
+Of these, only the width × height models can make 640 × 640. The FLUX MCP
+server used for the trials offers FLUX 3 only at preset sizes, the smallest
+square being 768 × 768.
 
 Settings the sources support:
 
-- **FLUX 3:** `grounding: false` for invented people, `aspect_ratio: "1:1"`
-  stated explicitly, `result.prompt` logged with every candidate, and a reject
-  for any candidate whose rewrite dropped or changed a declared value.
+- **FLUX 3:** `grounding: false` for invented people, `width` and `height` set
+  to the template's size (whether `aspect_ratio` may be sent with them is
+  untested), `result.prompt` logged with every candidate, and a reject for any
+  candidate whose rewrite dropped or changed a declared value.
 - **Grok Imagine:** `aspect_ratio: "1:1"` stated explicitly (`auto` brings in a
   "thinking upsampler"), `n: 1` until `n` > 1 is tested on Workers AI, whose
   output schema holds one image, and no `quality` field, which xAI documents
@@ -491,15 +500,20 @@ open weights are the only route where both the weights and the seed stay fixed.
   "Remove, disable, alter, obscure, any Content Credentials or represent to
   End Users or third parties that (i) Outputs are free of content provenance
   metadata", with no exception; Content Credentials are C2PA metadata or
-  watermarks. images.md §4 step 5 strips all metadata by re-encoding, and §8
-  fails a served file that carries C2PA, so for any BFL model the design
-  breaches the terms. xAI's acceptable-use policy bars "Stripping, altering or
+  watermarks. xAI's acceptable-use policy bars "Stripping, altering or
   circumventing embedded provenance metadata or watermarks", but that text
   comes from a secondary capture of July 2026 (x.ai/legal refused automated
   reads), and Cloudflare's example outputs carry C2PA for Grok Imagine 2.0 and
-  none for 1.0. For 1.0 the conflict is therefore unverified. A decision is
-  needed before a BFL model generates a pool: serve the originals, re-sign the
-  transcoded files, or take legal advice.
+  none for 1.0. The design used to strip all metadata by re-encoding and to
+  fail a served file that carried C2PA (images.md §4 step 5 and §8, as of
+  commit e4c8bdd), which breached BFL's terms. The stripping guarded against
+  a prompt written into the file, which does not hold up. Players never see
+  metadata; every accepted image shows its parameters (images.md §4 step 3),
+  so a prompt in the file tells a script nothing its pixels do not; and any
+  rule on content is open to a script anyway (scoring §9). None of the outputs
+  examined, FLUX 3's or Grok 2.0's, carries the prompt. Resolved on
+  2026-10-28: images are generated at the size they are served and served
+  byte for byte, so the credentials reach players intact.
 - **AI disclosure.** BFL's Developer Terms §6(i)(ii) and xAI's Enterprise
   Terms (secondary capture) forbid presenting output as human-made; xAI's
   acceptable-use policy (also secondary) bars "not being transparent regarding
@@ -569,14 +583,13 @@ Then a template v2 (images.md §6) and the new reject reasons and checks
   Kommunity License's exception for users under US$5M revenue. InsightFace's
   free licence covers non-commercial research only. Prolific charges a 33.3%
   academic or 42.857% corporate fee.
-- **Provenance** (§5).
 - **Does the hosted FLUX 3 planner decode greedily?** Step 2 of §6 answers it.
 - **Grok `n` > 1.** Does Workers AI return all `n` images, and do images from
   one request vary less than images from separate requests?
 - **Private taste in a forced choice.** No study found measures it. The game
   itself must, or a norming panel run as four-way picks rather than ratings.
-- **Face-shape words.** Do they render on FLUX 3 or Grok, survive at 640 px,
-  and keep parity?
+- **Face-shape words.** Do they render on FLUX 3 or Grok at the template's
+  size, and keep parity?
 - **Colour frequencies** for East, Southeast and South Asian, Middle Eastern
   and African populations: only allele frequencies were found.
 - **Hair texture and ethnicity.** Whether the models tie them: no literature

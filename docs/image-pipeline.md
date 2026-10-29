@@ -6,8 +6,10 @@ Status: specification, not implemented. The tools that carry out
 ## Summary
 
 - Seven steps, each a script: `subjects`, `generate` (or `manual`),
-  `curate`, `encode`, `upload`, `freeze`, and the check. Only curation needs a
-  person.
+  `curate`, `register`, `upload`, `freeze`, and the check. Only curation needs
+  a person.
+- Images are generated at the size they are served and never re-encoded: the
+  generator's file is the served file, metadata included.
 - The **subject ID** joins everything: prompt, candidate files, curation
   decisions and images. It never appears in a prompt.
 - Generation runs through an API, or by hand in a web app such as Grok
@@ -31,8 +33,7 @@ images/
     images.jsonl                      one line per accepted image
   sets/<set_id>.json                  frozen set
 work/<template>.v<n>/                 not in git
-  candidates/<subject>-c<k>.<ext>     generator originals
-  served/<sha256>.webp                encoded images
+  candidates/<subject>-c<k>.<ext>     generated files, served unchanged
 ```
 
 The fields of each record are in [images.md](images.md) §7. Logs are JSON
@@ -71,15 +72,17 @@ A line: `{"subject":"s017","values":{"ethnicity":"black","age":"33","hair_length
 
 ### 2.2 `generate`: prompts to candidates, through an API
 
-For each subject with no candidates yet, one request with the template's
-model and settings, `n` images at once.
+For each subject with no candidates yet, the candidates images.md §4 asks
+for, with the template's model and settings, at the template's width and
+height: one request with `n` where the model takes it, otherwise one request
+per candidate, numbered in the order sent.
 
-- Saves the returned images, in response order, as
+- Saves each returned image byte for byte as
   `candidates/<subject>-c<k>.<ext>`.
 - Appends one line per image to `generations.jsonl`: subject, candidate
-  number, SHA-256, provider, model, settings, request ID if the response has
-  one, time.
-- `--more <subject>` asks for `n` more for a subject whose candidates all
+  number, SHA-256, the width, height and format read from the file,
+  provider, model, settings, request ID if the response has one, time.
+- `--more <subject>` asks for two more for a subject whose candidates all
   failed, numbered on from the last.
 - Before the first request, prints the number of images and the estimated
   cost (count × listed price) and waits for a yes. `--dry-run` prints the
@@ -87,14 +90,20 @@ model and settings, `n` images at once.
 - Retries network and rate-limit errors with backoff. A content-policy
   refusal is logged as a generation with no file and the refusal's message.
 - Credentials come from the environment, never from files:
-  `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` for Workers AI.
+  `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN` for Workers AI,
+  `BFL_API_KEY` for BFL's API.
 
-Providers sit behind one function, `generate(prompt, settings)`, which
-returns a list of `{bytes, ext, requestId?}`. Workers AI comes first, via
+Models sit behind one function, `generate(prompt, settings, size)`, which
+returns a list of `{bytes, ext, requestId?}`. Each adapter maps the size to
+its model's own parameters, width and height on FLUX 3 and FLUX.2, a
+resolution on Grok Imagine. When the model cannot produce the size exactly,
+the adapter throws before any request, as Grok Imagine does for 640 × 640;
+nothing is ever resized. Workers AI comes first, via
 `POST https://api.cloudflare.com/client/v4/accounts/<account>/ai/run` with
-`{"model":"xai/grok-imagine-image","input":{…}}`. xAI's own API and
-Replicate are further adapters. Request `response_format: "b64_json"` where
-offered, so no image URL can expire before it is fetched.
+`{"model":"<model id>","input":{…}}`. BFL's API (for FLUX 3 Image), xAI's
+own API and Replicate are further adapters. Request
+`response_format: "b64_json"` where offered, so no image URL can expire before
+it is fetched.
 
 ### 2.3 `manual`: prompts to candidates, by hand
 
@@ -102,16 +111,18 @@ For a web app with no API, such as Grok Imagine in a browser. The helper
 does the bookkeeping; the person generates and downloads.
 
 - At start it asks for the service and the model name the app shows, and
-  records them with the date on every line. It reminds the person to set
-  the app to a 1:1 aspect ratio.
+  records them with the date on every line. It shows the template's width,
+  height and format, which the app's downloads must match exactly.
 - It takes the subjects with no candidates in ID order. For each, it puts
   the prompt on the clipboard (`clip.exe` under WSL, `pbcopy` on macOS,
   `wl-copy` or `xclip` on Linux) and prints the subject and prompt.
 - It watches the downloads folder (`--downloads`, required). Each new image
-  file is moved to `candidates/<subject>-c<k>.<ext>` and logged to
-  `generations.jsonl` like an API generation, with provider `manual`.
-  Partial downloads (`.crdownload`, `.part`, `.tmp`) are ignored until
-  complete.
+  file is moved, unchanged, to `candidates/<subject>-c<k>.<ext>` and logged
+  to `generations.jsonl` like an API generation, with provider `manual` and
+  the file's width, height and format. It stops at the first download whose
+  size or format is not the template's, since the rest will not match
+  either. Partial downloads (`.crdownload`, `.part`, `.tmp`) are ignored
+  until complete.
 - Keys: `n` for the next subject, `u` to undo the last move, `s` to skip, `q`
   to quit. Quitting and restarting resumes at the first subject with no
   candidates.
@@ -129,6 +140,10 @@ it, every half second, instead of watching.
 
 A local web page served from `localhost`. It never leaves the machine.
 
+- **Size and format first.** A candidate whose logged width, height or
+  format differs from the template's is rejected as `defect`, with a note,
+  before any candidate of its subject is offered. Browsers scale images, so
+  the curator could not see it.
 - **Subject view.** One subject at a time, with its parameter values and
   stated age. It offers only the lowest-numbered undecided candidate, with
   accept, or reject with one of images.md §4's reasons: `defect`, `style`,
@@ -141,25 +156,28 @@ A local web page served from `localhost`. It never leaves the machine.
 - Lists the subjects whose candidates have all failed, for `generate --more`
   or another `manual` pass.
 
-### 2.5 `encode`: accepted candidates to served images
+### 2.5 `register`: accepted candidates to images
 
 For each accepted candidate with no image record:
 
-- decode, convert to sRGB, resize to the template's served size, and encode
-  in its served format at a fixed quality. Writing fresh output keeps no
-  metadata; sharp, for example, drops it unless asked to keep it;
-- hash the served file and the original, and append the image record (§7 of
-  images.md) to `images.jsonl`.
+- confirm that its width, height and format are the template's and its
+  SHA-256 is the one `generations.jsonl` recorded. A refusal means the file
+  changed after curation: it names the subject, so the curator rejects the
+  candidate in the pool view and the subject reopens (§2.4). The check's rule
+  that every accept has an image (images.md §8) stops a subject from
+  dropping out unnoticed;
+- append the image record (§7 of images.md) to `images.jsonl`.
 
-A published image is never re-encoded: a new encoder can give new bytes, and
-new bytes are a new image.
+Nothing is decoded, resized or re-encoded. The candidate's file is the
+image, so the generator's provenance metadata stays valid (images.md §4,
+step 5).
 
 ### 2.6 `upload`: files to R2
 
-Puts every served file and original that R2 lacks, under
-`served/<sha256>.webp` and `original/<sha256>.<ext>`, with
-`wrangler r2 object put --remote` (Wrangler 4 writes to local storage
-without `--remote`). It lists what it will upload and waits for a yes. It
+Puts every image file that R2 lacks under `image/<sha256>`, with its content
+type set from the image record's format, using
+`wrangler r2 object put --remote --content-type <type>` (Wrangler 4 writes to
+local storage without `--remote`). It lists what it will upload and waits for a yes. It
 never deletes or overwrites an object.
 
 ### 2.7 `freeze`: filter to set
@@ -175,13 +193,13 @@ Takes a pool, a filter, N and a `set_id`, and writes `sets/<set_id>.json`.
 
 images.md §8 is the definition. The offline part runs inside
 `npm run check`, from the manifests. The online part runs as
-`npm run check:r2` before every deploy, against the objects in R2. Beyond §8,
-the offline part checks that:
+`npm run check:r2` before every deploy, against the objects in R2, and the
+delivery check of §8 runs after every deploy. Beyond §8, the offline part
+checks that:
 
 - every subject's prompt is its template rendered with its values;
 - each value's subjects meet the design: the count in `per_value`, and the
-  balance rule of §2.1;
-- every candidate file named in an image record is in `generations.jsonl`.
+  balance rule of §2.1.
 
 ## 4. Open questions
 
@@ -195,7 +213,10 @@ the offline part checks that:
   updated", and each response names the model that served it. FLUX 3 has no
   such fix: `latest` is its only version, and BFL changed the model in place
   after launch ([image-variability.md](image-variability.md) §5).
-- **App downloads.** Whether the Grok app downloads at full size, as one file
-  per image, and with what file names is unverified.
+- **App downloads.** Unverified: whether a web app can produce the
+  template's size at all (Grok's cannot make 640 × 640), whether it
+  downloads one file per image and under what names, and whether a download
+  is the model's file unchanged, with the same bytes and C2PA manifest as the
+  API and no metadata naming the account. Inspect the first download.
 - **Output terms** for this use: partly read, none reviewed by a lawyer; see
   [image-variability.md](image-variability.md) §5.
