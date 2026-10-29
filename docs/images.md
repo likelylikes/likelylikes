@@ -239,6 +239,32 @@ Other filters, such as two ethnicities or one age, follow §5.
 The privacy question in [requirements.md](requirements.md) is therefore a
 prerequisite for launching this template, not a later refinement.
 
+### 6.6 Version 2
+
+`women-portraits.v2` applies [image-variability.md](image-variability.md) §4.
+It declares hair colour, eye colour, face shape and one facial feature;
+holds age at one value, 30; and leaves red hair out. "Beautiful" moves into
+the fixed text, the same for every image, with visible cues such as clear
+skin, light makeup and groomed brows; the model is FLUX 3. Only `european`
+is defined, since colour lists for other ethnicities lack data. Its pool
+design draws 16 subjects that differ, pair by pair, in at least three of
+the six varied slots.
+
+The first pool, one FLUX 3 candidate per subject, judged by eye and not yet
+curated:
+
+- **Colouring rendered.** All four hair colours and most eye colours show
+  as declared; one "green" reads grey-blue.
+- **Face shape did not.** Shape and feature words barely registered, and
+  faces still converge: the three black-haired women read as one face with
+  different hair. This matches the binding evidence that shape renders
+  worst, and leaves the look-alike rule (image-variability.md §4.3) as the
+  only real control of identity.
+- **Age reads older.** Prompted at 30, most read mid to late 30s.
+- **"Beautiful" made little visible difference.** The faces are pleasant
+  and natural rather than glamorous. *(inference)* FLUX 3's planner drops
+  appraisal words, as BFL's own prompt guidance does.
+
 ## 7. Records
 
 Manifests are JSON files in git under `images/`; their layout is in

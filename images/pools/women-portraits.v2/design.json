@@ -1,0 +1,10 @@
+{
+  "template": "women-portraits",
+  "version": 2,
+  "stratify": "ethnicity",
+  "per_value": {
+    "european": 16
+  },
+  "balance": ["hair_length", "hair_texture", "hair_colour", "eye_colour", "face_shape", "feature"],
+  "seed": 20261028
+}

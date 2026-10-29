@@ -1,0 +1,68 @@
+{
+  "id": "women-portraits",
+  "version": 2,
+  "question": "Who do you find most beautiful?",
+  "prompt": "Head-and-shoulders portrait photograph of a beautiful {age}-year-old {ethnicity} woman with {face_shape}, {feature}, {eye_colour} and {hair_length} {hair_texture} {hair_colour} hair, facing the camera at eye level, relaxed expression with a soft closed-mouth smile, clear healthy skin, light natural makeup, groomed eyebrows, no jewellery, no glasses, plain heather-grey crew-neck t-shirt, plain off-white background, soft even frontal lighting, 85mm lens, centred with a small margin above the hair",
+  "parameters": {
+    "ethnicity": {
+      "european": "European"
+    },
+    "age": {
+      "30": "30"
+    },
+    "face_shape": {
+      "oval": "an oval face",
+      "round": "a round face",
+      "heart-shaped": "a heart-shaped face",
+      "square": "a square face"
+    },
+    "feature": {
+      "full-lips": "full lips",
+      "upturned-nose": "a small upturned nose",
+      "straight-nose": "a strong straight nose",
+      "high-cheekbones": "high cheekbones"
+    },
+    "eye_colour": {
+      "brown": "brown eyes",
+      "hazel": "hazel eyes",
+      "green": "green eyes",
+      "blue": "blue eyes"
+    },
+    "hair_length": {
+      "short": "short",
+      "shoulder-length": "shoulder-length",
+      "long": "long"
+    },
+    "hair_texture": {
+      "straight": "straight",
+      "wavy": "wavy",
+      "curly": "curly"
+    },
+    "hair_colour": {
+      "black": "black",
+      "dark-brown": "dark brown",
+      "light-brown": "light brown",
+      "blonde": "blonde"
+    }
+  },
+  "exclusions": [
+    {"hair_colour": "black", "eye_colour": "blue"},
+    {"hair_colour": "black", "eye_colour": "green"}
+  ],
+  "tags": {},
+  "model": {
+    "provider": "bfl",
+    "id": "flux3_image",
+    "version": null
+  },
+  "settings": {
+    "aspect_ratio": "1:1",
+    "resolution": "1k"
+  },
+  "served": {
+    "width": 640,
+    "height": 640,
+    "format": "webp",
+    "quality": 85
+  }
+}
