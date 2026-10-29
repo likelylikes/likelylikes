@@ -265,6 +265,28 @@ curated:
   and natural rather than glamorous. *(inference)* FLUX 3's planner drops
   appraisal words, as BFL's own prompt guidance does.
 
+### 6.7 Version 3
+
+`women-portraits.v3` is v2 with one change: the model is FLUX.2 [flex] at
+1024 × 1024 with prompt rewriting off, so the prompt reaches the model as
+written, and a recorded seed per subject. Its pool has the same 16 subjects.
+Judged by eye against v2, not yet curated:
+
+- **"Beautiful" registered.** Faces are polished and conventionally
+  attractive, with heavier makeup than "light natural" asked for.
+- **Age reads close to 30.**
+- **"Round face" registered,** as a fuller face and build. That adds real
+  variety but may open a gap in shared attractiveness, which needs the
+  parity check (image-variability.md §4.3) or softer wording.
+- **Faces are more distinct than v2's,** though the slimmer faces share one
+  look: strong brows, a narrow nose, defined cheekbones.
+- **Framing drifted.** About five crop the top of the hair, against "a small
+  margin above the hair": defects in curation. The background is whiter.
+
+The comparison supports the inference in image-variability.md §1.2 that
+FLUX 3's planner flattened the v2 faces, though the model also changed, so
+it does not prove it.
+
 ## 7. Records
 
 Manifests are JSON files in git under `images/`; their layout is in
