@@ -19,7 +19,9 @@ Status: specification, not implemented. The tools that carry out
 - Steps resume: each skips the work already recorded and never rewrites a
   record. The steps that spend money or write to R2 ask first.
 - Manifests go in git; generated files stay in a local working directory
-  until `upload`.
+  until `upload`. Sheets are the exception: few and the source of many
+  subjects, they go in git with the prompt as typed, as source material for
+  research and prototypes.
 
 ## 1. Layout
 
@@ -32,10 +34,11 @@ images/
     generations.jsonl                 one line per candidate
     curation.jsonl                    one line per decision
     images.jsonl                      one line per accepted image
+    sheets/<sheet>.<ext>              sheet originals, byte for byte (§2.3a)
+    sheets/<sheet>.md                 the prompt as typed into the app
   sets/<set_id>.json                  frozen set
 work/<template>.v<n>/                 not in git
   candidates/<subject>-c<k>.<ext>     generator originals
-  sheets/<sheet>.<ext>                generator originals holding a grid of subjects
   served/<sha256>.<ext>               served images, resized and signed
 ```
 
@@ -142,7 +145,8 @@ For a template with a `sheet` (images.md §3), a generation is one image of
 rows × columns cells, by either route above.
 
 - Sheets are numbered `g01`, `g02`, … in generation order and kept byte for
-  byte as `sheets/<sheet>.<ext>`.
+  byte as `images/pools/<pool>/sheets/<sheet>.<ext>`, in git, with the
+  prompt as typed beside it.
 - Each sheet must be square with sides divisible by the grid. The step
   checks that the seams fall on the cell lines and refuses a sheet whose
   cells are not equal.
