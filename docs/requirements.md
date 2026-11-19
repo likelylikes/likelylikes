@@ -49,7 +49,8 @@ picks the best. Points come from choosing consistently over time.
 - Each set carries the question the player answers, e.g. "Who do you find
   most beautiful?"
 - *(MVP)* Source: AI-generated images from parameterised templates, curated
-  and frozen into sets of 12–16. See [images.md](images.md).
+  and frozen into sets of 12–16, or larger sets marked as such. See
+  [images.md](images.md).
 
 ## Selection
 

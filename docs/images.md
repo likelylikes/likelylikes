@@ -14,7 +14,8 @@ women (§6). The tools that carry it out are specified in
   one template version filled with one value per parameter. Candidates of
   the same subject are numbered in the order generated.
 - The accepted images of one template version form a **pool**. A **set** is a
-  filter over a pool, frozen into a list of 12 to 16 images.
+  filter over a pool, frozen into a list of 12 to 16 images, or more in a
+  set marked large.
 - Any parameter can be filtered, ethnicity included. One template serves a
   mixed set and sets narrowed to specific ethnicities.
 - No image in a set may be clearly worse than the rest. Only the parameters
@@ -24,8 +25,11 @@ women (§6). The tools that carry it out are specified in
   keeps its C2PA provenance: one size and one format per pool, each file
   signed with a record of the resize that carries the generator's manifest
   where it wrote one.
-- Manifests live in git, image files in R2 under their content hash. A check
-  fails the build on a set that breaks these rules (§8).
+- Manifests and served files live in git, and image files in R2 under their
+  content hash. A check fails the build on a set that breaks these rules
+  (§8).
+- Until signing exists, served files can be made unsigned, as prototypes
+  that no published set may hold.
 
 ## 1. Constraints from scoring
 
@@ -45,7 +49,10 @@ Each rule follows from [scoring.md](scoring.md).
   other way: a set of N images can certify at most log₂(N!/3!) bits, 26 at
   N = 12 and 42 at N = 16, and one large set holds more than several small
   ones ([entropy.md](entropy.md) §3, §7). Raising N changes the check's bounds
-  (§8) and the pool design (§6.3), nothing else.
+  (§8) and the pool design (§6.3), nothing else. A set may opt out of the
+  bound by being marked large (§5): at N = 48 a consistent player needs
+  about 4,000 picks before the guaranteed average reaches 1 bit per pick,
+  and the set can certify up to 200 bits.
 - **No clearly worse image.** An image everyone rejects, such as one with a
   mangled hand, is a fixed rule on content (scoring §9). It makes every player
   look consistent, and it adds nothing to identity because the whole
@@ -70,6 +77,7 @@ Each rule follows from [scoring.md](scoring.md).
 | parameter | a named slot with a finite list of values, each with the prompt fragment it inserts |
 | subject | one value for every parameter of a template version |
 | candidate | one generated image of a subject, numbered `c1`, `c2`, … in the order generated |
+| sheet | one generated image holding a grid of subjects, a candidate in each cell (§3) |
 | image | a candidate accepted in curation; immutable, named by the SHA-256 of its served file |
 | pool | every image of one template version |
 | filter | for each parameter, the values allowed; a parameter left out allows all |
@@ -151,6 +159,11 @@ of one.
    ([image-variability.md](image-variability.md) §5). Keep the generator's
    file as well. A published image is never re-encoded: a new encoder or a
    new signature gives new bytes, and new bytes are a new image.
+
+   Until signing is implemented, an image can be made **unsigned** for
+   prototypes: resized the same way, with no manifest, and recorded as
+   unsigned. No published set may hold one (§8); signing it later makes a
+   new image.
 6. **Store.** Upload both files to R2 under their SHA-256 and add the image to
    the pool manifest (§7).
 
@@ -159,13 +172,18 @@ Rejected candidates are logged with their reason. Their files are not kept.
 ## 5. Sets
 
 A set is a filter, a size N with 12 ≤ N ≤ 16, and the N pool images it
-selected.
+selected. A set marked **large** may hold more, up to its pool, trading a
+slow start for identity capacity (§1); the mark is explicit, so no set grows
+past 16 by accident.
 
 - When the filter matches more than N images, choose N spread as evenly as N
   allows over the values of the parameters the filter leaves free. The choice
-  uses a recorded seed, so it can be reproduced.
-- A set is frozen when published. Different images or a different filter make
-  a new set.
+  uses a recorded seed, so it can be reproduced. It considers the pool's
+  images as they stood when the set was frozen, and the set records how many
+  there were, so the pool can grow without changing what the choice gives.
+- A set is frozen when it is written, and published when it is deployed,
+  which records its publication date. Different images or a different
+  filter make a new set.
 - One image can belong to several sets. Counts are kept per player × set
   ([requirements.md](requirements.md)), so its record in one set does not
   carry over to another.
@@ -330,8 +348,8 @@ Manifests are JSON files in git under `images/`; their layout is in
 | subject | subject ID, parameter values, rendered prompt, and for a sheet its sheet ID and cell (row, column) |
 | generation log | subject ID, candidate number, SHA-256, width, height and format of the file, provider, model, settings, seed or request ID if any, time; for a sheet, the sheet ID and the cell's crop rectangle, with the hash and size those of the whole sheet |
 | curation log | subject ID, candidate number, decision, reason, note, tags on an accept, time |
-| image | SHA-256 of the served file and of the original, template id and version, subject ID, candidate number, parameter values, tags, served width, height, format and bytes, encoder and its version |
-| set | `set_id`, template id and version, filter, N, selection seed, image hashes, publication date |
+| image | SHA-256 of the served file and of the original, template id and version, subject ID, candidate number, parameter values, tags, served width, height, format, bytes and quality, encoder and its version, whether signed, time |
+| set | `set_id`, template id and version, filter, N, whether large, selection seed, the number of pool images it chose from, image hashes, publication date (null until published) |
 
 R2 keys are `served/<sha256>` and `original/<sha256>`; each object carries its
 content type, set at upload from the file's format. The key never reaches
@@ -339,11 +357,14 @@ the client (§1).
 
 ## 8. The check
 
-Offline, as part of `npm run check`, from the manifests:
+Offline, as part of `npm run check`, from the manifests and the files in
+git:
 
-- every set has 12 ≤ N ≤ 16 distinct images, all from one pool;
-- re-running a set's filter and selection seed on its pool reproduces its
-  image list;
+- every set has N distinct images, 12 ≤ N ≤ 16 unless it is marked large,
+  all from one pool;
+- re-running a set's filter and selection seed on the pool images it chose
+  from reproduces its image list;
+- no published set holds an unsigned image;
 - every image's parameter values are in its template's lists and not
   excluded;
 - every `age` value is at least 25;

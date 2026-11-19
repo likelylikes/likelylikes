@@ -1,0 +1,25 @@
+{
+  "name": "likelylikes",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "likelylikes — a preference game; image pipeline tools",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "images:sheets": "node tools/images/sheets.ts",
+    "images:accept": "node tools/images/accept.ts",
+    "images:encode": "node tools/images/encode.ts",
+    "images:freeze": "node tools/images/freeze.ts",
+    "images:check": "node tools/images/check.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test \"tools/**/*.test.ts\"",
+    "check": "npm run typecheck && npm test && npm run images:check"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "sharp": "^0.35.5",
+    "typescript": "^5.9.3"
+  }
+}

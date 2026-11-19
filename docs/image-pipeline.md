@@ -1,16 +1,21 @@
 # likelylikes — image pipeline
 
-Status: specification, not implemented. The tools that carry out
+Status: partly implemented. The tools that carry out
 [images.md](images.md) §4–§5, from a template file to frozen sets in R2.
+Implemented under `tools/images/`: `sheets` (§2.3a), `accept` (§2.4a),
+`encode` without signing (§2.5), `freeze` (§2.7) and the offline check (§3).
+The rest is specification.
 
 ## Summary
 
-- Seven steps, each a script: `subjects`, `generate` (or `manual`),
-  `curate`, `encode`, `upload`, `freeze`, and the check. Only curation needs a
-  person.
+- Seven steps, each a script: `subjects`, `generate` (or `manual`, or
+  `sheets`), `curate`, `encode`, `upload`, `freeze`, and the check. Only
+  curation needs a person.
 - `encode` scales the generator's file down to the served size and signs a
   C2PA manifest that carries the generator's own, where it has one, so
-  provenance survives the resize.
+  provenance survives the resize. Signing is not implemented yet; until it
+  is, `encode --unsigned` makes prototype images that no published set may
+  hold.
 - The **subject ID** joins everything: prompt, candidate files, curation
   decisions and images. It never appears in a prompt.
 - Generation runs through an API, or by hand in a web app such as Grok
@@ -18,10 +23,12 @@ Status: specification, not implemented. The tools that carry out
   the same files, so every later step is the same.
 - Steps resume: each skips the work already recorded and never rewrites a
   record. The steps that spend money or write to R2 ask first.
-- Manifests go in git; generated files stay in a local working directory
-  until `upload`. Sheets are the exception: few and the source of many
-  subjects, they go in git with the prompt as typed, as source material for
-  research and prototypes.
+- Manifests and served files go in git; a served file is about 35 KB, so a
+  pool's served files are a few megabytes, and prototypes serve them from
+  the repo. Generated files stay in a local working directory until
+  `upload`. Sheets are the exception: few and the source of many subjects,
+  they go in git with the prompt as typed, as source material for research
+  and prototypes.
 
 ## 1. Layout
 
@@ -36,10 +43,10 @@ images/
     images.jsonl                      one line per accepted image
     sheets/<sheet>.<ext>              sheet originals, byte for byte (§2.3a)
     sheets/<sheet>.md                 the prompt as typed into the app
+    served/<sha256>.<ext>             served images, resized (§2.5)
   sets/<set_id>.json                  frozen set
 work/<template>.v<n>/                 not in git
   candidates/<subject>-c<k>.<ext>     generator originals
-  served/<sha256>.<ext>               served images, resized and signed
 ```
 
 The fields of each record are in [images.md](images.md) §7. Logs are JSON
@@ -48,13 +55,21 @@ A decision is changed by appending a new one; the last line for a candidate
 wins.
 
 **Subject IDs** are `s001`, `s002`, … within a pool, assigned once by
-`subjects` and never reused. Template id, version and subject ID together
+`subjects`, or by `sheets` for a sheet template, and never reused. Template id, version and subject ID together
 name a subject anywhere else.
 
 ## 2. Steps
 
 The scripts are Node and TypeScript under `tools/images/`, run as
-`npm run images:<step> -- --pool <template>.v<n>`.
+`npm run images:<step> -- --pool <template>.v<n>`; each takes `--help`.
+Node 22.18 or later runs the TypeScript as it is, with no build step.
+`npm run check` typechecks the tools, runs their tests and runs the offline
+check (§3). Images are decoded and encoded with sharp (libvips).
+
+Every seeded order is the one Python gives: `random.Random(seed).shuffle`
+on the items in the stated order. The tools carry a port of CPython's
+MT19937 for it, tested against CPython's output, so any record can be
+reproduced in one line of Python.
 
 ### 2.1 `subjects`: template and design to prompts
 
@@ -142,17 +157,42 @@ it, every half second, instead of watching.
 ### 2.3a Sheets
 
 For a template with a `sheet` (images.md §3), a generation is one image of
-rows × columns cells, by either route above.
+rows × columns cells, made by hand in an app or through an API. Sheets come
+before subjects: the prompt names the values, and the cells become the
+subjects.
 
-- Sheets are numbered `g01`, `g02`, … in generation order and kept byte for
-  byte as `images/pools/<pool>/sheets/<sheet>.<ext>`, in git, with the
-  prompt as typed beside it.
-- Each sheet must be square with sides divisible by the grid. The step
-  checks that the seams fall on the cell lines and refuses a sheet whose
-  cells are not equal.
-- Its subjects are made then, one per cell, numbered across all of the
-  pool's sheets in an order shuffled from the design's seed, and each logged
-  with candidate 1, the sheet's hash and size, and the cell's crop.
+```
+npm run images:sheets -- --pool women-profiles.v1 work/aistudio/*.jpg
+```
+
+- Each image is a JPEG, PNG or WebP download, with the prompt as typed into
+  the app beside it in a file of the same name ending `.md` or `.txt`. The
+  prompt must be the template's prompt with one value per slot, whitespace
+  aside; the step finds those values, so it never asks for them, and refuses
+  a prompt that matches no combination, naming the first character that
+  differs. A typing slip in the app shows up here.
+- Each sheet must be square with sides divisible by the grid, and its cells
+  at least the served size. The step checks that the cells sit exactly on
+  the grid lines: at each internal line it takes the mean brightness step
+  between neighbouring pixel columns (or rows) at offsets −8 to 8, and the
+  step across the line must be the largest and at least twice their median.
+  A grid off by a pixel peaks elsewhere; an image with no grid has no peak.
+  It refuses a sheet that fails, with the numbers.
+- The generation time is the latest RFC 3161 time-stamp in the file's C2PA
+  manifests, read from the DER of its TSTInfo; a sheet without one needs
+  `--time`. The manifest itself is not validated.
+- Every sheet is verified before anything is written. A sheet already in the
+  pool, by SHA-256, is skipped, so the step can be re-run on a folder.
+- Sheets are numbered `g01`, `g02`, … after the pool's last, in generation
+  order, and copied byte for byte to `images/pools/<pool>/sheets/<sheet>.<ext>`,
+  in git, with the prompt file beside it as `<sheet>.md`.
+- Their subjects are made then, one per cell, numbered after the pool's last
+  subject in the order `random.Random(seed).shuffle` gives the cells listed
+  sheet by sheet, row by row, where the seed is the design's plus the number
+  of subjects already in the pool. Each is logged with candidate 1, the
+  sheet's hash and size, the cell's crop, the template's provider, model and
+  settings, how the file was obtained (`--via`, default `browser download`)
+  and the time.
 - A rejected cell is not regenerated alone; its subject stays without an
   image.
 
@@ -178,6 +218,20 @@ A local web page served from `localhost`. It never leaves the machine.
 - Lists the subjects whose candidates have all failed, for `generate --more`
   or another `manual` pass.
 
+### 2.4a `accept --all`: a prototype pool taken unreviewed
+
+```
+npm run images:accept -- --pool <pool> --all --note "<who decided, and why>"
+```
+
+When the pool's owner decides to use a pool before anyone curates it, this
+appends an accept for every subject that has none, on its lowest-numbered
+candidate not rejected, which is what "first that passes" picks when nobody
+looks. The note, required, records who decided and that the images were not
+reviewed. It is refused for a template that declares tags, since an accept
+must record them. Curating later still works: a reject in the pool view
+withdraws the image, and a set built on it must be frozen again.
+
 ### 2.5 `encode`: accepted candidates to served images
 
 For each accepted candidate with no image record:
@@ -200,11 +254,20 @@ For each accepted candidate with no image record:
   conversion; no thumbnails, which the tools add by default; and an RFC 3161
   time-stamp. The private key comes from a path in the environment, never
   from the repo;
-- hash the served file and the original, and append the image record (§7 of
-  images.md), with the encoder and its version, to `images.jsonl`.
+- hash the served file and the original, write the served file to
+  `images/pools/<pool>/served/<sha256>.<ext>`, and append the image record
+  (§7 of images.md), with the encoder and its version, to `images.jsonl`.
 
 A published image is never re-encoded: a new encoder or a new signature
 gives new bytes, and new bytes are a new image.
+
+**As implemented.** sharp crops, scales with Lanczos-3 and encodes WebP at
+the template's quality with effort 4; the output carries no metadata. The
+same input and sharp version give the same bytes. Signing is not
+implemented, because there is no signing certificate yet (images.md §9), so
+the step runs only as `npm run images:encode -- --pool <pool> --unsigned`,
+which records `"signed": false`. Such an image is a prototype: the check
+refuses it in a published set, and signing it later makes a new image.
 
 ### 2.6 `upload`: files to R2
 
@@ -218,23 +281,46 @@ a yes. It never deletes or overwrites an object.
 
 Takes a pool, a filter, N and a `set_id`, and writes `sets/<set_id>.json`.
 
+```
+npm run images:freeze -- --pool <pool> --set <set_id> --n <N> [--filter ethnicity=irish,italian] [--seed <int>] [--large]
+```
+
 - Chooses N of the matching images not withdrawn (§2.4) as images.md §5
   says, with a selection seed, which it draws and records when none is
-  given.
+  given. The images considered are the pool's image records at that moment,
+  and the set records how many there were (`pool_images`), so re-running it
+  reads the same lines however much the pool has grown since.
+- The choice: shuffle the matching images with
+  `random.Random(seed).shuffle`, in pool order, then take N one at a time,
+  each the first in shuffled order whose values for the free parameters
+  (those the filter does not fix to one value) have been taken least so far,
+  summed over those parameters.
+- N is 12 to 16; `--large` allows more, up to the pool, and records the set
+  as large (images.md §5).
 - Refuses when fewer than N images match, and refuses to overwrite an
-  existing set file: a set is frozen.
+  existing set file: a set is frozen. It writes `"published": null`; the
+  publication date is set when the set is published.
 
 ## 3. The check
 
 images.md §8 is the definition. The offline part runs inside
-`npm run check`, from the manifests. The online part runs as
+`npm run check`, from the manifests and the files in git
+(`npm run images:check` runs it alone). The online part runs as
 `npm run check:r2` before every deploy, against the objects in R2, and the
-delivery check of §8 runs after every deploy. Beyond §8, the offline part
-checks that:
+delivery check of §8 runs after every deploy; neither is implemented yet.
+Beyond §8, the offline part checks that:
 
 - every subject's prompt is its template rendered with its values;
 - each value's subjects meet the design: the count in `per_value`, and the
-  balance rule of §2.1.
+  balance rule of §2.1, read as: each value of each balanced parameter, and
+  each allowed combination of them, appears equally often to within one;
+- every sheet is in git with its recorded SHA-256, its prompt file is its
+  subjects' prompt, whitespace aside, and its generations agree on its hash,
+  size, format and time;
+- every served file is in git, its content matches its name and record, and
+  no served file lacks an image record;
+- the logs refer only to subjects and candidates that exist, and nothing
+  appears twice.
 
 ## 4. Open questions
 
@@ -253,4 +339,8 @@ checks that:
   model's file unchanged, with the same C2PA manifest as the API and no
   metadata naming the account. Inspect the first download.
 - **Output terms** for this use: partly read, none reviewed by a lawyer; see
-  [image-variability.md](image-variability.md) §5.
+  [image-variability.md](image-variability.md) §5. Google's terms for
+  Gemini output, which the `women-profiles` sheets are, are unread.
+- **Signing.** `encode` signs nothing yet; it needs the certificate of
+  images.md §9 and `c2patool` or the C2PA library. Prototype images made
+  before then are replaced, not re-signed, when it lands.
