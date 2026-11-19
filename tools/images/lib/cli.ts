@@ -25,7 +25,7 @@ export function parseCli<O extends Options>(usage: string, options: O, allowPosi
     console.log(usage)
     process.exit(0)
   }
-  return { values: parsed.values, positionals: parsed.positionals, root: resolve(common.root ?? REPO) }
+  return { values: parsed.values, positionals: parsed.positionals, root: common.root === undefined ? REPO : inputPath(common.root) }
 }
 
 /**

@@ -4,9 +4,14 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { after, test } from 'node:test'
 import sharp from 'sharp'
-import { REPO, paths, readJson, readJsonl, type Design, type Generation, type Subject } from './lib/records.ts'
+import { check } from './check.ts'
+import {
+  REPO, appendJsonl, loadDesign, loadTemplate, paths, readJson, readJsonl, subjectNumber,
+  type Design, type Generation, type Subject,
+} from './lib/records.ts'
 import { TEST_POOL, scratchRepo, syntheticSheet, testTemplate } from './lib/testing.ts'
-import { ingest, parseTime, valuesForPrompt } from './sheets.ts'
+import { c2paTimestamp } from './lib/timestamp.ts'
+import { ingest, inspectSheet, parseTime, plan, valuesForPrompt } from './sheets.ts'
 
 const scratch: string[] = []
 after(() => {
@@ -34,14 +39,37 @@ test('a prompt that is not the template\'s names the first difference, escaping 
   assert.throws(() => valuesForPrompt(loose, 'Sixteen squares of 30-year-old grey, in a 4x4 grid.'), /matches 2/)
 })
 
-test('--time needs a zone and is written to the second, in UTC', () => {
+test('--time needs a zone and a real calendar time, and is written to the second, in UTC', () => {
   assert.equal(parseTime('2026-11-02T08:21:09.7+01:00'), '2026-11-02T07:21:09+00:00')
   assert.equal(parseTime('2026-11-02T07:21Z'), '2026-11-02T07:21:00+00:00')
   assert.throws(() => parseTime('2026-11-02T07:21:09'), /zone/)
   assert.throws(() => parseTime('November 2'), /zone/)
+  assert.throws(() => parseTime('2026-02-30T00:00:00Z'), /calendar/)
+  assert.throws(() => parseTime('2026-11-02T24:00:00Z'), /calendar/)
 })
 
-test('re-ingesting the committed sheets reproduces the committed records byte for byte', async () => {
+/**
+ * The batches a sheet pool's sheets were added in: each run numbers its subjects after the last and
+ * shuffles them together, so a batch is the shortest run of subjects, in ID order, covering whole sheets.
+ */
+function batches(subjects: Subject[], cellsPerSheet: number): string[][] {
+  const out: string[][] = []
+  let sheets = new Set<string>()
+  let count = 0
+  for (const s of [...subjects].sort((a, b) => subjectNumber(a.subject) - subjectNumber(b.subject))) {
+    sheets.add(s.sheet!)
+    count++
+    if (count === sheets.size * cellsPerSheet) {
+      out.push([...sheets])
+      sheets = new Set()
+      count = 0
+    }
+  }
+  assert.equal(count, 0, 'every batch covers whole sheets')
+  return out
+}
+
+test('re-ingesting the committed sheets, batch by batch, reproduces the committed records byte for byte', async () => {
   const pool = 'women-profiles.v1'
   const root = mkdtempSync(join(tmpdir(), 'likelylikes-reingest-'))
   scratch.push(root)
@@ -51,32 +79,72 @@ test('re-ingesting the committed sheets reproduces the committed records byte fo
   mkdirSync(join(root, 'images', 'templates'), { recursive: true })
   cpSync(real.template, copy.template)
   cpSync(real.design, copy.design)
-  const sheets = [...new Set(readJsonl<Generation>(real.generations).map(g => `${g.sheet}.${g.format === 'jpeg' ? 'jpg' : g.format}`))]
-  // Given in reverse order, and with a prompt file among them: the step sorts by time-stamp and ignores prompt files.
-  const files = [...sheets].reverse().map(f => join(real.sheets, f))
-  const report = await ingest(root, pool, [...files, join(real.sheets, sheets[0]!.replace(/\.[a-z]+$/, '.md'))])
-  assert.equal(report.ignored.length, 1)
-  assert.equal(report.plan.perValue, null, 'the committed design already counts these subjects')
-  for (const f of ['subjects', 'generations'] as const) assert.equal(readFileSync(copy[f], 'utf8'), readFileSync(real[f], 'utf8'), f)
-  for (const f of sheets) {
-    assert.ok(readFileSync(join(copy.sheets, f)).equals(readFileSync(join(real.sheets, f))), f)
-    const md = f.replace(/\.[a-z]+$/, '.md')
-    assert.ok(readFileSync(join(copy.sheets, md)).equals(readFileSync(join(real.sheets, md))), md)
+  const t = loadTemplate(REPO, pool)
+  const generations = readJsonl<Generation>(real.generations)
+  const file = (sheet: string) => {
+    const g = generations.find(x => x.sheet === sheet)!
+    return { path: join(real.sheets, `${sheet}.${g.format === 'jpeg' ? 'jpg' : g.format}`), g }
   }
-  const again = await ingest(root, pool, files)
-  assert.equal(again.plan.sheets.length, 0)
-  assert.equal(again.skipped.length, sheets.length)
+  for (const batch of batches(readJsonl<Subject>(real.subjects), t.sheet!.rows * t.sheet!.columns)) {
+    // Given in reverse order, with a prompt file among them: the step sorts by time and skips prompt files.
+    const sheets = batch.map(file).reverse()
+    const unstamped = sheets.filter(s => c2paTimestamp(readFileSync(s.path)) === null)
+    const report = await ingest(root, pool, [...sheets.map(s => s.path), sheets[0]!.path.replace(/\.[a-z]+$/, '.md')], {
+      time: unstamped[0]?.g.time, via: sheets[0]!.g.via,
+    })
+    assert.equal(report.ignored.length, 1)
+  }
+  for (const f of ['subjects', 'generations', 'design'] as const) assert.equal(readFileSync(copy[f], 'utf8'), readFileSync(real[f], 'utf8'), f)
+  for (const sheet of new Set(generations.map(g => g.sheet!))) {
+    const { path } = file(sheet)
+    const name = path.slice(real.sheets.length + 1)
+    assert.ok(readFileSync(join(copy.sheets, name)).equals(readFileSync(path)), name)
+    assert.ok(readFileSync(join(copy.sheets, `${sheet}.md`)).equals(readFileSync(join(real.sheets, `${sheet}.md`))), `${sheet}.md`)
+  }
 })
 
-test('a sheet ingested with --time is skipped on a re-run before anything asks for its time again', async () => {
+test('a sheet ingested with --time is skipped on a re-run, the same command included, and folders are passed over', async () => {
   const { root, inbox } = await repo()
   await ingest(root, TEST_POOL, [inbox[0]!], { time: '2026-11-01T10:00:00Z' })
+  const same = await ingest(root, TEST_POOL, [inbox[0]!], { time: '2026-11-01T10:00:00Z' })
+  assert.equal(same.skipped.length, 1)
   const report = await ingest(root, TEST_POOL, [inbox[0]!, inbox[1]!], { time: '2026-11-01T11:00:00Z' })
   assert.equal(report.skipped.length, 1)
   assert.equal(report.plan.sheets.length, 1)
-  const again = await ingest(root, TEST_POOL, [inbox[0]!, inbox[1]!])
+  mkdirSync(join(root, 'inbox', 'old'))
+  const again = await ingest(root, TEST_POOL, [inbox[0]!, inbox[1]!, join(root, 'inbox', 'old')])
   assert.equal(again.skipped.length, 2)
+  assert.deepEqual(again.ignored, [join(root, 'inbox', 'old')])
   assert.equal(again.plan.sheets.length, 0)
+})
+
+test('a run cut short after its generations were logged is finished by the next run', async () => {
+  const { root, inbox } = await repo()
+  const files = paths(root, TEST_POOL)
+  const t = loadTemplate(root, TEST_POOL)
+  // What a run stopped between its two appends leaves: the sheet files and generations, no subjects.
+  const fresh = await inspectSheet(t, inbox[0]!, readFileSync(inbox[0]!), '2026-11-01T10:00:00Z')
+  const pl = plan(t, loadDesign(root, TEST_POOL, t), [], [], [fresh], 'browser download')
+  mkdirSync(files.sheets, { recursive: true })
+  writeFileSync(join(files.sheets, 'g01.png'), fresh.bytes)
+  writeFileSync(join(files.sheets, 'g01.md'), readFileSync(fresh.promptFile))
+  appendJsonl(files.generations, pl.generations)
+  const dry = await ingest(root, TEST_POOL, [inbox[0]!, inbox[1]!], { dryRun: true, time: '2026-11-01T11:00:00Z' })
+  assert.equal(dry.completed.length, 16)
+  assert.equal(readJsonl<Subject>(files.subjects).length, 0, 'a dry run writes nothing')
+  const report = await ingest(root, TEST_POOL, [inbox[0]!, inbox[1]!], { time: '2026-11-01T11:00:00Z' })
+  assert.equal(report.completed.length, 16)
+  assert.deepEqual(readJsonl<Subject>(files.subjects).slice(0, 16), pl.subjects)
+  assert.equal(readJsonl<Subject>(files.subjects).length, 32)
+  const { problems } = await check(root)
+  assert.deepEqual(problems.filter(p => p.where === TEST_POOL && p.rule !== 'images'), [])
+})
+
+test('a dry run refuses, as a real one would, a sheet file already there with other bytes', async () => {
+  const { root, inbox } = await repo()
+  mkdirSync(paths(root, TEST_POOL).sheets, { recursive: true })
+  writeFileSync(join(paths(root, TEST_POOL).sheets, 'g01.png'), 'something else')
+  await assert.rejects(ingest(root, TEST_POOL, [inbox[0]!], { time: '2026-11-01T10:00:00Z', dryRun: true }), /exists with other content/)
 })
 
 test('a sheet of another size, a rotated one, or a grid off by a pixel is refused before anything is written', async () => {

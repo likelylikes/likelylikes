@@ -84,6 +84,8 @@ export interface Decision {
 export interface ImageRecord {
   sha256: string
   original: string
+  /** The part of the original that was served, in its pixels: a sheet's cell less the inset, or the whole image. */
+  region: Crop
   template: string
   version: number
   subject: string
@@ -236,7 +238,17 @@ export function templateProblems(t: Template): string[] {
   else {
     for (const [name, values] of Object.entries(v['parameters'])) {
       if (!isObject(values) || !Object.keys(values).length) out.push(`parameter ${name} must map values to fragments`)
-      else for (const [value, fragment] of Object.entries(values)) if (typeof fragment !== 'string') out.push(`parameter ${name} value ${value}: fragment must be a string`)
+      else {
+        for (const [value, fragment] of Object.entries(values)) if (typeof fragment !== 'string') out.push(`parameter ${name} value ${value}: fragment must be a string`)
+        // Values that put the same words in the prompt could not be told apart from it.
+        const fragments = Object.values(values)
+        if (new Set(fragments).size !== fragments.length) out.push(`parameter ${name}: two values share a fragment`)
+      }
+    }
+    if (typeof v['prompt'] === 'string') {
+      const slots = new Set([...(v['prompt'] as string).matchAll(/\{([^{}]*)\}/g)].map(m => m[1]!))
+      for (const slot of slots) if (!has(v['parameters'] as object, slot)) out.push(`prompt slot {${slot}} is not a parameter`)
+      for (const name of Object.keys(v['parameters'])) if (!slots.has(name)) out.push(`parameter ${name} has no slot in the prompt, so its values would not show in it`)
     }
   }
   if (!Array.isArray(v['exclusions'])) out.push('exclusions must be a list')
@@ -264,6 +276,8 @@ export function templateProblems(t: Template): string[] {
   const s = v['served']
   if (!isObject(s) || !isPositiveInt(s['width']) || !isPositiveInt(s['height']) || typeof s['format'] !== 'string' || !(Number.isInteger(s['quality']) && (s['quality'] as number) >= 1 && (s['quality'] as number) <= 100)) {
     out.push('served must give positive width and height, a format and a quality of 1 to 100')
+  } else if (s['width'] !== s['height']) {
+    out.push(`served size ${s['width']}x${s['height']} is not square; originals and cells are, and would be stretched`)
   }
   return out
 }
@@ -366,10 +380,21 @@ export function exactGrid(width: number, height: number, rows: number, columns: 
 /** A grid that does not divide its sheet puts each line within a pixel of where it should be; the inset must cover that. */
 export const MIN_INSET_FRACTIONAL = 2
 
-/** The part of a candidate that is served: a sheet's cell less the template's inset on every side. */
-export function servedRegion(t: Template, crop: Crop): Crop {
+/** The part of a candidate that is served: a sheet's cell less the template's inset on every side, or the whole image. */
+export function servedRegion(t: Template, g: Pick<Generation, 'crop' | 'width' | 'height'>): Crop {
+  if (!g.crop) return { x: 0, y: 0, width: g.width, height: g.height }
   const inset = t.sheet?.inset ?? 0
-  return { x: crop.x + inset, y: crop.y + inset, width: crop.width - 2 * inset, height: crop.height - 2 * inset }
+  return { x: g.crop.x + inset, y: g.crop.y + inset, width: g.crop.width - 2 * inset, height: g.crop.height - 2 * inset }
+}
+
+/** The (row, column) of the cell whose crop this is, or null. */
+export function cellOf(crop: Crop, width: number, height: number, rows: number, columns: number): Cell | null {
+  for (let row = 1; row <= rows; row++) {
+    for (let column = 1; column <= columns; column++) {
+      if (sameJson(cellCrop(width, height, rows, columns, row, column), crop)) return { row, column }
+    }
+  }
+  return null
 }
 
 /** The last decision per candidate wins (image-pipeline.md §1). */

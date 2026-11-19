@@ -154,6 +154,24 @@ test('the check catches a set whose seed or considered list does not reproduce i
   assert.ok((await rules(dir)).includes('selection'))
 })
 
+test('the check catches a considered list out of pool order', async () => {
+  const dir = copy()
+  const file = join(setsDir(dir), 'test-red-12.json')
+  const set = readJson<SetRecord>(file)
+  writeFileSync(file, JSON.stringify({ ...set, considered: [...set.considered].reverse() }))
+  const { problems } = await check(dir)
+  assert.ok(problems.some(p => p.rule === 'selection' && /not in pool order/.test(p.detail)))
+})
+
+test('the check catches images made before the template\'s inset changed', async () => {
+  const dir = copy()
+  const file = paths(dir, TEST_POOL).template
+  const t = readJson<Template>(file)
+  writeFileSync(file, JSON.stringify({ ...t, sheet: { ...t.sheet!, inset: 2 } }))
+  const { problems } = await check(dir)
+  assert.equal(problems.filter(p => p.rule === 'encoding' && /served region/.test(p.detail)).length, 32)
+})
+
 test('the check catches a prompt that is not the template\'s and a cell with no generation', async () => {
   const dir = copy()
   const files = paths(dir, TEST_POOL)

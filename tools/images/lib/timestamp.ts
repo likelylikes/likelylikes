@@ -51,7 +51,8 @@ function genTimeAfter(buf: Uint8Array, oidEnd: number): string {
   for (let i = 0; i < expected.length; i++) {
     const field = readTlv(buf, pos, tstInfo.end)
     if (field.tag !== expected[i]) throw new Error(`TSTInfo field ${i + 1} has tag ${field.tag}`)
-    if (i === 4) return Buffer.from(buf.subarray(field.start, field.end)).toString('ascii')
+    // latin1, not ascii: Node's ascii decoder drops the high bit, which would read a stray byte as a digit.
+    if (i === 4) return Buffer.from(buf.subarray(field.start, field.end)).toString('latin1')
     pos = field.end
   }
   throw new Error('unreachable')

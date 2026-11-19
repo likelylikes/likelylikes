@@ -1,15 +1,15 @@
 // `sheets`: downloaded sheet images to subjects and generations (docs/image-pipeline.md §2.3a).
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, join } from 'node:path'
 import sharp from 'sharp'
 import { inputPath, parseCli, requirePool, run } from './lib/cli.ts'
 import { describeSeam, verifyGrid } from './lib/grid.ts'
 import { PyRandom } from './lib/pyrandom.ts'
 import {
-  MIN_INSET_FRACTIONAL, appendJsonl, cellCrop, combinations, escapeNonAscii, extension, isoSeconds, loadDesign,
-  loadTemplate, normalisePrompt, paths, readJsonl, renderPrompt, sha256, sheetId, sheetNumber, subjectId,
-  subjectNumber,
+  MIN_INSET_FRACTIONAL, appendJsonl, cellCrop, cellOf, combinations, escapeNonAscii, extension, isoSeconds,
+  loadDesign, loadTemplate, normalisePrompt, paths, readJsonl, renderPrompt, sha256, sheetId, sheetNumber,
+  subjectId, subjectNumber,
   type Design, type Generation, type Subject, type Template,
 } from './lib/records.ts'
 import { c2paTimestamp } from './lib/timestamp.ts'
@@ -28,7 +28,8 @@ a folder can be passed as <folder>/*.
               has no C2PA time-stamp
   --via       how the file was obtained (default: browser download)
 
-A sheet already in the pool, by SHA-256, is skipped before anything else, so the step can be re-run.`
+A sheet already in the pool, by SHA-256, is skipped before anything else, and a run cut short is
+finished, so the step can be re-run.`
 
 export interface NewSheet {
   file: string
@@ -68,8 +69,14 @@ export function promptFileFor(file: string): string {
 
 /** A --time as the records write time: needs a zone, so it means the same on any machine. */
 export function parseTime(time: string): string {
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(time)) {
-    throw new Error(`--time must be an ISO 8601 time with its zone, such as 2026-11-02T07:21:09Z, not ${time}`)
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/.exec(time)
+  if (!m) throw new Error(`--time must be an ISO 8601 time with its zone, such as 2026-11-02T07:21:09Z, not ${time}`)
+  // Date would roll 30 February over into March; the fields as written must be a real time.
+  const [y, mo, d, h, mi] = m.slice(1, 6).map(Number) as [number, number, number, number, number]
+  const s = m[6] === undefined ? 0 : Number(m[6])
+  const local = new Date(Date.UTC(y, mo - 1, d, h, mi, s))
+  if (local.getUTCFullYear() !== y || local.getUTCMonth() !== mo - 1 || local.getUTCDate() !== d || local.getUTCHours() !== h || local.getUTCMinutes() !== mi || local.getUTCSeconds() !== s) {
+    throw new Error(`--time is not a calendar time: ${time}`)
   }
   const ms = Date.parse(time)
   if (Number.isNaN(ms)) throw new Error(`--time is not a date: ${time}`)
@@ -157,6 +164,29 @@ export interface IngestReport {
   plan: Plan
   skipped: Array<{ file: string; sheet: string }>
   ignored: string[]
+  /** Subjects of a run cut short after its generations were logged, written now. */
+  completed: Subject[]
+}
+
+/**
+ * The subjects an interrupted run logged generations for but never wrote. A generation line names
+ * its subject, sheet and crop, and the sheet's prompt file gives the values, so each can be rebuilt.
+ */
+export function missingSubjects(t: Template, root: string, pool: string, subjects: Subject[], generations: Generation[]): Subject[] {
+  const files = paths(root, pool)
+  const have = new Set(subjects.map(s => s.subject))
+  const out: Subject[] = []
+  for (const g of generations) {
+    if (have.has(g.subject) || !g.sheet || !g.crop) continue
+    const promptFile = join(files.sheets, `${g.sheet}.md`)
+    if (!existsSync(promptFile)) throw new Error(`${g.subject} is in generations.jsonl but not subjects.jsonl, and ${promptFile}, which would rebuild it, is missing`)
+    const values = valuesForPrompt(t, readFileSync(promptFile, 'utf8'))
+    const cell = cellOf(g.crop, g.width, g.height, t.sheet!.rows, t.sheet!.columns)
+    if (!cell) throw new Error(`${g.subject}: crop ${JSON.stringify(g.crop)} is no cell of its sheet`)
+    out.push({ subject: g.subject, values, prompt: renderPrompt(t, values), sheet: g.sheet, cell })
+    have.add(g.subject)
+  }
+  return out
 }
 
 /** Verifies every new sheet, then (unless dryRun) writes the sheets, the design and the logs, in that order. */
@@ -165,8 +195,11 @@ export async function ingest(root: string, pool: string, files: string[], opts: 
   if (!t.sheet) throw new Error(`template ${pool} does not generate sheets`)
   const p = paths(root, pool)
   const design = loadDesign(root, pool, t)
-  const existingSubjects = readJsonl<Subject>(p.subjects)
   const existingGenerations = readJsonl<Generation>(p.generations)
+  // Finish a run cut short between its two logs before anything else.
+  const completed = missingSubjects(t, root, pool, readJsonl<Subject>(p.subjects), existingGenerations)
+  if (completed.length && !opts.dryRun) appendJsonl(p.subjects, completed)
+  const existingSubjects = [...readJsonl<Subject>(p.subjects), ...(opts.dryRun ? completed : [])]
   const known = new Map(existingGenerations.filter(g => g.sheet).map(g => [g.sha256, g.sheet!]))
   const ignored: string[] = []
   const skipped: IngestReport['skipped'] = []
@@ -178,7 +211,16 @@ export async function ingest(root: string, pool: string, files: string[], opts: 
       ignored.push(file)
       continue
     }
-    const bytes = readFileSync(file)
+    let bytes: Buffer
+    try {
+      if (statSync(file).isDirectory()) {
+        ignored.push(file)
+        continue
+      }
+      bytes = readFileSync(file)
+    } catch (e) {
+      throw new Error(`${file}: ${(e as Error).message}`)
+    }
     const hash = sha256(bytes)
     const sheet = known.get(hash)
     if (sheet) skipped.push({ file, sheet })
@@ -187,7 +229,7 @@ export async function ingest(root: string, pool: string, files: string[], opts: 
       candidates.push({ file, bytes })
     }
   }
-  if (opts.time && candidates.length !== 1) throw new Error(`--time is for one new sheet; ${candidates.length} are new`)
+  if (opts.time && candidates.length > 1) throw new Error(`--time is for one new sheet; ${candidates.length} are new`)
   const fresh: NewSheet[] = []
   for (const c of candidates) {
     try {
@@ -204,15 +246,13 @@ export async function ingest(root: string, pool: string, files: string[], opts: 
     }
   }
   const pl = plan(t, design, existingSubjects, existingGenerations, fresh, opts.via ?? 'browser download')
-  if (!opts.dryRun) write(root, pool, pl, design)
-  return { plan: pl, skipped, ignored }
+  const writes = sheetWrites(root, pool, pl)
+  if (!opts.dryRun) write(root, pool, pl, design, writes)
+  return { plan: pl, skipped, ignored, completed }
 }
 
-/**
- * Writes sheets first, then the design, then the logs, so an interrupted run can be repeated: a
- * sheet file already there with the same bytes is fine, and the logs decide what is in the pool.
- */
-export function write(root: string, pool: string, pl: Plan, design: Design): void {
+/** The sheet and prompt files a plan writes; refuses, dry run or not, when one is there with other bytes. */
+export function sheetWrites(root: string, pool: string, pl: Plan): Array<{ path: string; bytes: Buffer }> {
   const files = paths(root, pool)
   const writes: Array<{ path: string; bytes: Buffer }> = []
   for (const s of pl.sheets) {
@@ -222,11 +262,21 @@ export function write(root: string, pool: string, pl: Plan, design: Design): voi
   for (const w of writes) {
     if (existsSync(w.path) && !readFileSync(w.path).equals(w.bytes)) throw new Error(`${w.path} exists with other content; sheets are never overwritten`)
   }
+  return writes
+}
+
+/**
+ * Writes the sheets, then the design, then generations.jsonl, then subjects.jsonl, so a run cut
+ * short can be repeated: a sheet file already there with the same bytes is fine, generations decide
+ * which sheets the pool holds, and subjects missing for them are rebuilt (missingSubjects).
+ */
+export function write(root: string, pool: string, pl: Plan, design: Design, writes = sheetWrites(root, pool, pl)): void {
+  const files = paths(root, pool)
   mkdirSync(files.sheets, { recursive: true })
   for (const w of writes) if (!existsSync(w.path)) writeFileSync(w.path, w.bytes)
   if (pl.perValue) writeFileSync(files.design, JSON.stringify({ ...design, per_value: pl.perValue }, null, 2) + '\n')
-  appendJsonl(files.subjects, pl.subjects)
   appendJsonl(files.generations, pl.generations)
+  appendJsonl(files.subjects, pl.subjects)
 }
 
 async function main(): Promise<void> {
@@ -238,6 +288,7 @@ async function main(): Promise<void> {
   const pool = requirePool(opts.pool, USAGE)
   if (!positionals.length) throw new Error(`no sheet images given\n\n${USAGE}`)
   const report = await ingest(root, pool, positionals.map(inputPath), { time: opts.time, via: opts.via, dryRun: opts['dry-run'] })
+  if (report.completed.length) console.log(`completed ${report.completed.length} subjects of a run cut short: ${report.completed.map(s => s.subject).join(' ')}`)
   for (const s of report.skipped) console.log(`skip ${s.file}: already in ${pool} as ${s.sheet}`)
   const pl = report.plan
   for (const s of pl.sheets) {

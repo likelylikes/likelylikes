@@ -8,7 +8,7 @@ import { parseCli, run } from './lib/cli.ts'
 import {
   MIN_INSET_FRACTIONAL, REJECT_REASONS, candidateKey, cellCrop, combinations, designProblems, exactGrid, extension,
   has, isExcluded, lastDecisions, listPools, loadTemplate, normalisePrompt, parsePool, paths, poolName, readJson,
-  readJsonl, renderPrompt, sameJson, setsDir, sha256, sheetNumber, subjectNumber, withdrawnImages,
+  readJsonl, renderPrompt, sameJson, servedRegion, setsDir, sha256, sheetNumber, subjectNumber, withdrawnImages,
   type Decision, type Design, type Generation, type ImageRecord, type SetRecord, type Subject, type Template,
 } from './lib/records.ts'
 import { matchesFilter, selectFrom } from './lib/select.ts'
@@ -312,7 +312,11 @@ async function checkImages(root: string, pool: Pool, report: Report): Promise<vo
     const key = candidateKey(img.subject, img.candidate)
     const g = gens.get(key)
     if (!g) report('images', `${what}: no such generation`)
-    else if (img.original !== g.sha256) report('original', `${what}: original ${img.original} is not the SHA-256 the generation log recorded`)
+    else {
+      if (img.original !== g.sha256) report('original', `${what}: original ${img.original} is not the SHA-256 the generation log recorded`)
+      // The served region follows from the template; an image made before the inset changed is out of step.
+      if (!sameJson(img.region, servedRegion(t, g))) report('encoding', `${what}: served region ${JSON.stringify(img.region)} is not ${JSON.stringify(servedRegion(t, g))}, which the template's inset gives`)
+    }
     if (img.template !== t.id || img.version !== t.version) report('images', `${what}: belongs to ${img.template} v${img.version}`)
     const s = subjects.get(img.subject)
     if (s && !sameJson(img.values, s.values)) report('values', `${what}: values differ from the subject's`)
@@ -412,8 +416,10 @@ function checkSet(set: SetRecord, pools: Map<string, Pool>, report: Report): voi
     else if (set.published !== null && img.signed !== true) report('signed', `${hash.slice(0, 12)} (${img.subject}) is unsigned, in a published set`)
   }
   if (set.published !== null && (typeof set.published !== 'string' || Number.isNaN(Date.parse(set.published)))) report('sets', `published must be null or a date, not ${JSON.stringify(set.published)}`)
-  // Re-run on what the set recorded it chose from: later withdrawals, new images and log order change nothing.
+  // Re-run on what the set recorded it chose from: later withdrawals, new images and log order change
+  // nothing. Freeze writes that list; the check holds it to pool order, the pool and the filter.
   if (new Set(set.considered).size !== set.considered.length) report('selection', 'an image appears twice in considered')
+  const position = new Map(pool.images.map((i, k) => [i.sha256, k]))
   const considered: ImageRecord[] = []
   for (const hash of set.considered) {
     const img = byHash.get(hash)
@@ -422,6 +428,7 @@ function checkSet(set: SetRecord, pools: Map<string, Pool>, report: Report): voi
     else considered.push(img)
   }
   if (considered.length !== set.considered.length) return
+  if (considered.some((img, k) => k > 0 && position.get(img.sha256)! < position.get(considered[k - 1]!.sha256)!)) report('selection', 'considered is not in pool order')
   try {
     const again = selectFrom(t, considered, set.filter, set.n, set.seed)
     if (!sameJson(again, set.images)) report('selection', 're-running the filter and seed does not reproduce the image list')

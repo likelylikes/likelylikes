@@ -15,7 +15,7 @@ function images(spec: Array<[string, string, number]>, prefix = 'h'): ImageRecor
   return spec.flatMap(([ethnicity, age, count]) => Array.from({ length: count }, () => {
     k++
     return {
-      sha256: `${prefix}${String(k).padStart(3, '0')}`, original: 'o', template: 'x', version: 1, subject: `s${String(k).padStart(3, '0')}`,
+      sha256: `${prefix}${String(k).padStart(3, '0')}`, original: 'o', region: { x: 0, y: 0, width: 640, height: 640 }, template: 'x', version: 1, subject: `s${String(k).padStart(3, '0')}`,
       candidate: 1, values: { ethnicity, age }, tags: {}, width: 640, height: 640, format: 'webp', bytes: 1, quality: 85,
       encoder: 'e', encoder_version: 'v', signed: false, time: '',
     }

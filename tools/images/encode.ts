@@ -49,7 +49,7 @@ export async function serve(t: Template, original: Uint8Array, g: Generation): P
   if (meta.orientation !== undefined && meta.orientation !== 1) throw new Error(`EXIF orientation ${meta.orientation}: the original's pixels are stored rotated`)
   let img = sharp(original).pipelineColourspace('srgb')
   if (g.crop) {
-    const r = servedRegion(t, g.crop)
+    const r = servedRegion(t, g)
     img = img.extract({ left: r.x, top: r.y, width: r.width, height: r.height })
   }
   return img
@@ -112,7 +112,7 @@ export async function encodePool(root: string, pool: string, log: (line: string)
       const out = join(files.served, `${hash}.${extension(t.served.format)}`)
       if (!existsSync(out)) writeFileSync(out, served)
       const record: ImageRecord = {
-        sha256: hash, original: g.sha256, template: t.id, version: t.version, subject: g.subject, candidate: g.candidate,
+        sha256: hash, original: g.sha256, region: servedRegion(t, g), template: t.id, version: t.version, subject: g.subject, candidate: g.candidate,
         values: subject.values, tags: last.get(candidateKey(g.subject, g.candidate))?.tags ?? {},
         width: t.served.width, height: t.served.height, format: t.served.format, bytes: served.length,
         quality: t.served.quality, encoder: ENCODER, encoder_version: version, signed: false, time: isoSeconds(new Date()),

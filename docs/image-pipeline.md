@@ -22,7 +22,9 @@ check (§3). The rest is specification.
   Imagine with a helper that names each download for its subject. Both write
   the same files, so every later step is the same.
 - Steps resume: each skips the work already recorded and never rewrites a
-  record. The steps that spend money or write to R2 ask first.
+  record, except that `sheets` raises a sheet pool's `per_value` in
+  `design.json` to the subjects its sheets hold. The steps that spend money
+  or write to R2 ask first.
 - Manifests and served files go in git; a served file is about 35 KB, so a
   pool's served files are a few megabytes, and prototypes serve them from
   the repo. Generated files stay in a local working directory until
@@ -167,8 +169,8 @@ npm run images:sheets -- --pool women-profiles.v1 work/aistudio/*
 
 - Each image is a JPEG, PNG or WebP download, with the prompt as typed into
   the app beside it in a file of the same name ending `.md` or `.txt`;
-  prompt files given among the images are skipped, so a folder can be
-  passed whole. Paths are read from where `npm` was run.
+  prompt files and folders given among the images are skipped, so a folder
+  can be passed whole. Paths are read from where `npm` was run.
 - The prompt must be the template's prompt with one value per slot; the
   step finds those values, so it never asks for them. The comparison folds
   what an editor changes on a paste: whitespace and line endings, a byte
@@ -191,17 +193,22 @@ npm run images:sheets -- --pool women-profiles.v1 work/aistudio/*
   rotated.
 - The generation time is the latest RFC 3161 time-stamp in the file's C2PA
   manifests, read from the DER of its TSTInfo, with a JPEG's APP11 segments
-  joined first; it is written to the second. A sheet without one needs
-  `--time` with its zone, such as `2026-11-02T07:21:09Z`, and `--time` is
-  refused for a sheet that has one. The manifest itself is not validated.
+  joined first; it is written to the second. A new sheet without one needs
+  `--time` with its zone and a real calendar time, such as
+  `2026-11-02T07:21:09Z`, and `--time` is refused for a sheet that has one.
+  The manifest itself is not validated.
 - A sheet already in the pool, by SHA-256, is skipped before anything else,
-  so the step can be re-run on a folder. Every new sheet is verified before
-  anything is written.
+  so the step can be re-run on a folder, the same command included. Every
+  new sheet is verified before anything is written.
 - Sheets are numbered `g01`, `g02`, … after the pool's last, in generation
   order, and copied byte for byte to `images/pools/<pool>/sheets/<sheet>.<ext>`,
   in git, with the prompt file beside it as `<sheet>.md`. A file already
-  there with the same bytes is fine, so a run cut short can be repeated;
-  one with other bytes stops the step.
+  there with the same bytes is fine; one with other bytes stops the step,
+  in a dry run too.
+- It writes the sheets, then the design, then `generations.jsonl`, then
+  `subjects.jsonl`, so a run cut short can be repeated: the next run first
+  rebuilds any subject a generation line names but `subjects.jsonl` lacks,
+  from the line's sheet and crop and the sheet's prompt file.
 - The design's `per_value` is raised for each value the pool now holds more
   subjects of than it says, since a sheet pool's design records what its
   sheets hold.
@@ -355,8 +362,10 @@ delivery check of §8 runs after every deploy; neither is implemented yet.
 Beyond §8, the offline part checks that:
 
 - every template and design is well formed: the fields of images.md §7
-  with the right types, and a design naming only the template's parameters
-  and values;
+  with the right types; a square served size; every prompt slot a
+  parameter and every parameter a slot, with no two values of one sharing a
+  fragment, so the prompt always tells the values apart; and a design
+  naming only the template's parameters and values;
 - every subject's prompt is its template rendered with its values;
 - each value's subjects meet the design: the count in `per_value`, and the
   balance rule of §2.1, read as: within each value, each possible value of
@@ -370,7 +379,11 @@ Beyond §8, the offline part checks that:
   crop is its cell's; no file in `sheets/` lacks a record;
 - the size rules of images.md §8 apply to candidates not rejected, since
   the tools reject a file of the wrong size before anyone sees it;
-- every image has an accept somewhere in the curation log;
+- every image has an accept somewhere in the curation log, and its served
+  region is the one its template gives today, so an inset changed after
+  encoding shows;
+- a set's considered list is in pool order, each an image of its pool that
+  matches its filter; the check takes the list as `freeze` wrote it;
 - every served file is in git and readable, its content matches its name
   and record, and no served file lacks an image record;
 - the logs refer only to subjects and candidates that exist, and nothing

@@ -115,6 +115,8 @@ on every internal edge, and use 8.
 
 A template's served settings, the sheet's inset among them, may be amended
 until its pool's first image is encoded, since they shape no generation.
+Each image records the region of its original it served, and the check
+holds it to the template's, so an amendment after that shows.
 
 Some models take no seed and carry no version in their ID; Grok Imagine
 through Workers AI is one (§9). Then nothing can regenerate an image: the
@@ -372,7 +374,7 @@ Manifests are JSON files in git under `images/`; their layout is in
 | subject | subject ID, parameter values, rendered prompt, and for a sheet its sheet ID and cell (row, column) |
 | generation log | subject ID, candidate number, SHA-256, width, height and format of the file, provider (and service for a manual one), model, settings, seed or request ID if any, how the file was obtained, time; for a sheet, the sheet ID and the cell's crop rectangle, with the hash and size those of the whole sheet |
 | curation log | subject ID, candidate number, decision, reason, note, tags on an accept, time |
-| image | SHA-256 of the served file and of the original, template id and version, subject ID, candidate number, parameter values, tags, served width, height, format, bytes and quality, encoder and its version, whether signed, time |
+| image | SHA-256 of the served file and of the original, the region of the original served, template id and version, subject ID, candidate number, parameter values, tags, served width, height, format, bytes and quality, encoder and its version, whether signed, time |
 | set | `set_id`, template id and version, filter, N, whether large, selection seed, the hashes of the images it chose from, image hashes, publication date (null until published) |
 
 R2 keys are `served/<sha256>` and `original/<sha256>`; each object carries its

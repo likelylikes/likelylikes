@@ -76,6 +76,15 @@ test('takes the latest of several time-stamps, to the second, skipping broken an
   assert.equal(c2paTimestamp(bytes), '2026-03-01T08:09:10+00:00')
 })
 
+test('a genTime with a byte outside ASCII is not read as a time', () => {
+  // 0xb2 is '2' with the high bit set; an ascii decoder would read 2026-12-31.
+  const crafted = token('20261231000000Z')
+  const at = crafted.lastIndexOf(Buffer.from('20261231'))
+  crafted[at + 3] = 0xb6
+  const bytes = Buffer.concat([token('20261102072109Z'), crafted])
+  assert.equal(c2paTimestamp(bytes), '2026-11-02T07:21:09+00:00')
+})
+
 test('a file with no time-stamp gives null', () => {
   assert.equal(c2paTimestamp(Buffer.from('no manifest here, 20261102072109Z')), null)
 })
