@@ -22,10 +22,13 @@
   "model": {
     "provider": "manual",
     "service": "Google AI Studio",
-    "id": null,
+    "id": "Nano Banana 2.1",
     "version": null
   },
-  "settings": {},
+  "settings": {
+    "aspect_ratio": "1:1",
+    "resolution": "4K"
+  },
   "served": {
     "width": 640,
     "height": 640,

@@ -297,7 +297,8 @@ it does not prove it.
 
 ### 6.8 A sheet template: `women-profiles` v1
 
-Three 4 × 4 sheets made by hand in Google AI Studio, one each for Irish,
+Three 4 × 4 sheets made by hand in Google AI Studio with Nano Banana 2.1 at
+1:1 and 4K, one each for Irish,
 Italian and Norwegian women: 48 subjects, three-quarter profiles turned to
 the viewer's right, eyes to the camera, beaming, dark grey background
 (§3, sheets). Each sheet is 4096 × 4096 JPEG with 1024-pixel cells and a
@@ -313,9 +314,9 @@ and an applied SynthID watermark. Not yet curated.
 - **Clothing, hair and teeth vary;** the pose, expression, light and
   background hold. The Norwegian sheet varies clothing, the others hardly
   show it.
-- **Gaps in the record:** the model's name, the settings and the Italian
-  sheet's exact prompt (the prompt file reads "Irish") were not recorded at
-  generation. The times are those of the manifests' time-stamps.
+- **Recorded after the fact:** the model, settings and prompts were noted
+  by hand after generation, and the times are those of the manifests'
+  time-stamps.
 
 ## 7. Records
 
