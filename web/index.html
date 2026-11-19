@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#0f1012">
+  <title>likelylikes</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <div id="banner" class="banner" role="alert" hidden>
+    <span id="banner-text"></span>
+    <button type="button" id="banner-close" class="banner-close" aria-label="Dismiss">&times;</button>
+  </div>
+
+  <main>
+    <section id="home" class="view" hidden>
+      <h1 class="title">likelylikes</h1>
+      <p class="lede">Up to 2 bits a pick for choosing consistently with your own past picks; random clicking earns nothing on average.</p>
+      <div id="sets" class="sets"></div>
+    </section>
+
+    <section id="play" class="view" hidden>
+      <div class="stage">
+        <h1 id="play-question" class="question"></h1>
+        <dl class="bar">
+          <div class="stat"><dt>Time</dt><dd id="p-time">0:00</dd></div>
+          <div class="stat"><dt>Gain</dt><dd id="p-gain">0.00</dd></div>
+          <div class="stat"><dt>Last pick</dt><dd id="p-last" aria-live="polite">&mdash;</dd></div>
+          <div class="stat"><dt>Total LLR</dt><dd id="p-llr">0.00</dd></div>
+          <div class="stat"><dt>Consistency</dt><dd id="p-cons">&mdash;</dd></div>
+        </dl>
+        <div id="grid" class="grid" role="group" aria-label="Options" data-state="waiting" aria-busy="true">
+          <button type="button" class="tile" aria-label="Option 1" aria-disabled="true"></button>
+          <button type="button" class="tile" aria-label="Option 2" aria-disabled="true"></button>
+          <button type="button" class="tile" aria-label="Option 3" aria-disabled="true"></button>
+          <button type="button" class="tile" aria-label="Option 4" aria-disabled="true"></button>
+        </div>
+        <p class="hint">Click or tap an image, or press 1&ndash;4.</p>
+      </div>
+    </section>
+
+    <section id="results" class="view" hidden>
+      <header class="results-head">
+        <h1>Session over</h1>
+        <p id="r-question" class="results-question"></p>
+      </header>
+      <dl class="summary">
+        <div><dt>Session gain</dt><dd><span id="r-gain">0.00</span><span class="unit">bits</span></dd></div>
+        <div><dt>Picks</dt><dd id="r-picks">0</dd></div>
+        <div><dt>Bits per pick</dt><dd id="r-rate">&mdash;</dd></div>
+        <div><dt>Total LLR</dt><dd><span id="r-llr">0.00</span><span class="unit">bits</span></dd></div>
+        <div><dt>Consistency</dt><dd id="r-cons">&mdash;</dd></div>
+      </dl>
+      <p id="r-odds" class="odds" hidden></p>
+      <div class="actions">
+        <button type="button" id="r-again" class="btn primary">Play again</button>
+        <button type="button" id="r-home" class="btn">Home</button>
+      </div>
+      <section class="ordering-block" aria-labelledby="ordering-title">
+        <h2 id="ordering-title">Your ordering so far</h2>
+        <p id="r-ordering-note" class="note"></p>
+        <ol id="r-ordering" class="ordering"></ol>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

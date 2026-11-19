@@ -1,0 +1,47 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "likelylikes",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-11-19",
+
+  // The client (web/) and the sets' served images with their catalogue, copied into public/ by
+  // `npm run build` (tools/site/build.ts).
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    // The API needs the Worker. /data/* holds the images and the catalogue: the Worker reads them
+    // through env.ASSETS, which this routing does not apply to, and answers a direct request 404,
+    // so no URL a player can open names an image (docs/scoring.md §4.3, §9). Everything else is a
+    // static asset, served without running the Worker.
+    "run_worker_first": ["/api/*", "/data/*"],
+    // One page and no client-side routes, so an unknown path is a plain 404.
+    "not_found_handling": "none"
+  },
+
+  // Players, sessions, rounds, picks, and the counts per player × set; the schema is in
+  // migrations/. No database_id: the database is provisioned on first deploy, and `wrangler dev`
+  // runs a local one.
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "likelylikes",
+      "migrations_dir": "migrations"
+    }
+  ],
+
+  "vars": {
+    // Seconds per session, as a string. The server is the clock. Shorten it locally with
+    // `wrangler dev --var SESSION_SECONDS:8`.
+    "SESSION_SECONDS": "60"
+  },
+
+  // Logs and traces both; the top-level switch alone does not turn traces on.
+  "observability": {
+    "enabled": true,
+    "traces": {
+      "enabled": true
+    }
+  }
+
+  // No routes: the domain is not chosen, and deploy is "not stated yet" (.claude/rules/repo.md).
+}

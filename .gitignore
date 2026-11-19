@@ -150,3 +150,8 @@ vite.config.ts.timestamp-*
 
 # Image pipeline working files (docs/image-pipeline.md §1)
 work/
+
+# The site build (npm run build), local Wrangler state and the types `wrangler types` generates
+public/
+.wrangler/
+worker-configuration.d.ts

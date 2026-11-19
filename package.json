@@ -14,13 +14,17 @@
     "images:encode": "node tools/images/encode.ts",
     "images:freeze": "node tools/images/freeze.ts",
     "images:check": "node tools/images/check.ts",
-    "typecheck": "tsc --noEmit",
-    "test": "node --test \"tools/**/*.test.ts\"",
+    "build": "node tools/site/build.ts",
+    "db:migrate": "wrangler d1 migrations apply likelylikes --local -y",
+    "dev": "npm run build && npm run db:migrate && wrangler dev",
+    "typecheck": "wrangler types && tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
+    "test": "node --test \"tools/**/*.test.ts\" \"src/**/*.test.ts\"",
     "check": "npm run typecheck && npm test && npm run images:check"
   },
   "devDependencies": {
     "@types/node": "^22.20.5",
     "sharp": "^0.35.5",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "wrangler": "^4.165.0"
   }
 }

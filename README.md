@@ -1,6 +1,15 @@
 # likelylikes
 A preference game: pick the best of four images, round after round, and score points for ranking consistently over time. The same choice patterns can identify and verify individuals.
 
+## Play locally
+
+```
+npm install
+npm run dev
+```
+
+Then open http://localhost:8787. `npm run dev` builds `public/` from `web/` and the frozen image sets, applies the migrations to a local D1 database, and starts `wrangler dev`. A session lasts `vars.SESSION_SECONDS` seconds, set in `wrangler.jsonc` (60). The player is an anonymous cookie: clear it to play as someone new, or delete `.wrangler/state/v3/d1` and run `npm run db:migrate` to wipe all local play.
+
 ## Image sets from sheets
 
 A sheet is one generated image holding a grid of faces, say 4 × 4, made from one prompt. To turn downloaded sheets into an image set:

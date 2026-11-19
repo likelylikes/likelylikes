@@ -15,5 +15,5 @@
     "noEmit": true,
     "skipLibCheck": true
   },
-  "include": ["tools/**/*.ts"]
+  "include": ["tools/**/*.ts", "src/game/**/*.ts"]
 }
