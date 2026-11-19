@@ -35,6 +35,7 @@ images/
   sets/<set_id>.json                  frozen set
 work/<template>.v<n>/                 not in git
   candidates/<subject>-c<k>.<ext>     generator originals
+  sheets/<sheet>.<ext>                generator originals holding a grid of subjects
   served/<sha256>.<ext>               served images, resized and signed
 ```
 
@@ -135,6 +136,22 @@ Under WSL2 the Windows downloads folder, `/mnt/c/Users/<you>/Downloads`,
 does not deliver file-change events from Windows programs. The helper polls
 it, every half second, instead of watching.
 
+### 2.3a Sheets
+
+For a template with a `sheet` (images.md §3), a generation is one image of
+rows × columns cells, by either route above.
+
+- Sheets are numbered `g01`, `g02`, … in generation order and kept byte for
+  byte as `sheets/<sheet>.<ext>`.
+- Each sheet must be square with sides divisible by the grid. The step
+  checks that the seams fall on the cell lines and refuses a sheet whose
+  cells are not equal.
+- Its subjects are made then, one per cell, numbered across all of the
+  pool's sheets in an order shuffled from the design's seed, and each logged
+  with candidate 1, the sheet's hash and size, and the cell's crop.
+- A rejected cell is not regenerated alone; its subject stays without an
+  image.
+
 ### 2.4 `curate`: candidates to decisions
 
 A local web page served from `localhost`. It never leaves the machine.
@@ -166,8 +183,9 @@ For each accepted candidate with no image record:
   the curator rejects the candidate in the pool view and the subject reopens
   (§2.4). The check's rule that every accept has an image (images.md §8)
   stops a subject from dropping out unnoticed;
-- decode, convert to sRGB, scale down to the template's served size, and
-  encode in its served format at its quality;
+- decode, crop to the cell if it came from a sheet, convert to sRGB, scale
+  down to the template's served size, and encode in its served format at
+  its quality. A crop adds a `c2pa.cropped` action before `c2pa.transcoded`;
 - sign a C2PA manifest for the result with `c2patool` or its library,
   passing the original as the parent (`--parent`; without it, c2patool makes
   the resized file its own parent and silently drops the generator's

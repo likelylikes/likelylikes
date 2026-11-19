@@ -86,6 +86,14 @@ different template versions never share a set, because their style differs.
 The model generates a square at one of its own sizes, set in the settings
 and at least as large as the served size; §4 scales it down.
 
+A template may instead generate a **sheet**: one image holding a grid of
+equal square cells, rows × columns given in the template, one subject per
+cell. The prompt asks for the whole grid, so the subjects of one sheet share
+one prompt and one generation, and the model sees all of them at once, which
+is what lets it make them differ. The sheet is the original; each cell is a
+crop of it, and the cell, not the sheet, must be square and at least the
+served size. A sheet's subjects get one candidate each.
+
 Some models take no seed and carry no version in their ID; Grok Imagine
 through Workers AI is one (§9). Then nothing can regenerate an image: the
 generator's file is the only record of it, which is why §4 keeps it. And the
@@ -287,6 +295,28 @@ The comparison supports the inference in image-variability.md §1.2 that
 FLUX 3's planner flattened the v2 faces, though the model also changed, so
 it does not prove it.
 
+### 6.8 A sheet template: `women-profiles` v1
+
+Three 4 × 4 sheets made by hand in Google AI Studio, one each for Irish,
+Italian and Norwegian women: 48 subjects, three-quarter profiles turned to
+the viewer's right, eyes to the camera, beaming, dark grey background
+(§3, sheets). Each sheet is 4096 × 4096 JPEG with 1024-pixel cells and a
+C2PA manifest signed by Google, recording "Created by Google Generative AI"
+and an applied SynthID watermark. Not yet curated.
+
+- **Faces differ far more than in any FLUX pool.** By SFace (OpenCV's
+  face recogniser; pairs at or above cosine 0.363 count as the same person),
+  pairs within one sheet are the same person in 55, 95 and 92 of 120
+  (Irish, Norwegian, Italian), against 117 of 120 for v3, with mean cosine
+  0.37–0.45 against 0.58. Across all 48 it is 415 of 1128. The comparison is
+  rough: SFace is less sure of a three-quarter view than of a frontal one.
+- **Clothing, hair and teeth vary;** the pose, expression, light and
+  background hold. The Norwegian sheet varies clothing, the others hardly
+  show it.
+- **Gaps in the record:** the model's name, the settings and the Italian
+  sheet's exact prompt (the prompt file reads "Irish") were not recorded at
+  generation. The times are those of the manifests' time-stamps.
+
 ## 7. Records
 
 Manifests are JSON files in git under `images/`; their layout is in
@@ -294,10 +324,10 @@ Manifests are JSON files in git under `images/`; their layout is in
 
 | Record | Fields |
 |---|---|
-| template | id, version, question, prompt, parameters (name → values with fragments), exclusions, tags (name → allowed values), model (provider, id, version if any), settings, served width, height, format and quality |
+| template | id, version, question, prompt, parameters (name → values with fragments), exclusions, tags (name → allowed values), sheet rows and columns if it generates sheets, model (provider, service for a manual one, id, version if any), settings, served width, height, format and quality |
 | pool design | template id and version, the parameter subjects are drawn per value of, subjects per value, the parameters balanced within each value, shuffle seed |
-| subject | subject ID, parameter values, rendered prompt |
-| generation log | subject ID, candidate number, SHA-256, width, height and format of the file, provider, model, settings, seed or request ID if any, time |
+| subject | subject ID, parameter values, rendered prompt, and for a sheet its sheet ID and cell (row, column) |
+| generation log | subject ID, candidate number, SHA-256, width, height and format of the file, provider, model, settings, seed or request ID if any, time; for a sheet, the sheet ID and the cell's crop rectangle, with the hash and size those of the whole sheet |
 | curation log | subject ID, candidate number, decision, reason, note, tags on an accept, time |
 | image | SHA-256 of the served file and of the original, template id and version, subject ID, candidate number, parameter values, tags, served width, height, format and bytes, encoder and its version |
 | set | `set_id`, template id and version, filter, N, selection seed, image hashes, publication date |
@@ -319,7 +349,9 @@ Offline, as part of `npm run check`, from the manifests:
 - every image's served file has its template's served width, height and
   format;
 - every image's original has the SHA-256 the generation log recorded for its
-  candidate, and is square and at least the served size;
+  candidate, and is square and at least the served size, or for a sheet,
+  its crop is a square cell of the template's grid at least the served
+  size, and every cell of the sheet belongs to exactly one subject;
 - every original in a pool has the same width and height, and every served
   file was encoded at the template's quality by one encoder version;
 - every generation in a pool has the same provider, model and settings;

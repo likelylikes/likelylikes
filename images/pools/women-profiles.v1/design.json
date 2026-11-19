@@ -1,0 +1,12 @@
+{
+  "template": "women-profiles",
+  "version": 1,
+  "stratify": "ethnicity",
+  "per_value": {
+    "irish": 16,
+    "italian": 16,
+    "norwegian": 16
+  },
+  "balance": [],
+  "seed": 20261118
+}

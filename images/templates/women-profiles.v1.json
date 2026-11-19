@@ -1,0 +1,35 @@
+{
+  "id": "women-profiles",
+  "version": 1,
+  "question": "Who do you find most beautiful?",
+  "prompt": "Create 16 different left facing diagonal profile images of different beautiful {age} year old beaming {ethnicity} women looking right at the camera from the corner of their eyes. Use a dark gray background. Each woman should look like they are from different families. Each individual should have different shaped eyes, nose, lips, cheeks, front teeth, canines, and incisors. Vary the spacing between upper lip and nose. Vary the overall shape of the face between oval, round, square, heart, diamond, rectangle. The 16 profiles should be arranged in a 4x4 grid with no boundary between the profiles.",
+  "parameters": {
+    "ethnicity": {
+      "irish": "Irish",
+      "italian": "Italian",
+      "norwegian": "Norwegian"
+    },
+    "age": {
+      "25": "25"
+    }
+  },
+  "exclusions": [],
+  "tags": {},
+  "sheet": {
+    "rows": 4,
+    "columns": 4
+  },
+  "model": {
+    "provider": "manual",
+    "service": "Google AI Studio",
+    "id": null,
+    "version": null
+  },
+  "settings": {},
+  "served": {
+    "width": 640,
+    "height": 640,
+    "format": "webp",
+    "quality": 85
+  }
+}
