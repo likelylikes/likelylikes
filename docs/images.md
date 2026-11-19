@@ -352,15 +352,18 @@ and an applied SynthID watermark. Not yet curated.
 - **Recorded after the fact:** the model, settings and prompts were noted
   by hand after generation, and the times are those of the manifests'
   time-stamps.
-- **First set.** `women-profiles.v1-mixed-41` is a large set of 41
-  unsigned prototype images (§4, step 5), all three nationalities, from a
-  pool taken without curation by a person at the owner's request.
-- **Seven held back for age.** An automated visual review of all 48 cells,
-  each flag re-examined by a second, skeptical reviewer, found no defect
-  that requires a reject, but for s009, s020, s023, s032, s039, s044 and s047
-  both agreed a viewer could take her for under 21; neither put anyone
-  under 18. They are rejected for `age`, pending the owner's own look. Four
-  of the seven are Norwegian, so that sheet has 12 images in the set.
+- **The set.** `women-profiles.v1-mixed-48` is a large set of all 48
+  cells, as unsigned prototype images (§4, step 5), from a pool taken
+  without curation by a person at the owner's request. It replaced a
+  41-image set frozen first, which was never published.
+- **Age estimates.** An automated visual review of all 48 cells, each flag
+  re-examined by a second, skeptical reviewer, found no defect that requires
+  a reject. Its apparent-age range for each face is in `estimates.jsonl`:
+  19 to 36 over the pool, against the prompt's 25. For seven, s009, s020,
+  s023, s032, s039, s044 and s047, both reviewers agreed a viewer could take
+  her for under 21; neither put anyone under 18. They were first held back
+  under the rule of §4, step 3, then accepted by the owner, on the view that
+  the apparent age of a generated face carries little weight.
 
 ## 7. Records
 
@@ -374,6 +377,7 @@ Manifests are JSON files in git under `images/`; their layout is in
 | subject | subject ID, parameter values, rendered prompt, and for a sheet its sheet ID and cell (row, column) |
 | generation log | subject ID, candidate number, SHA-256, width, height and format of the file, provider (and service for a manual one), model, settings, seed or request ID if any, how the file was obtained, time; for a sheet, the sheet ID and the cell's crop rectangle, with the hash and size those of the whole sheet |
 | curation log | subject ID, candidate number, decision, reason, note, tags on an accept, time |
+| estimate log | subject ID, candidate number, measure (`apparent_age`), low and high (equal for a point estimate), the instrument, named precisely enough to repeat, time; estimates inform curation and decide nothing on their own |
 | image | SHA-256 of the served file and of the original, the region of the original served, template id and version, subject ID, candidate number, parameter values, tags, served width, height, format, bytes and quality, encoder and its version, whether signed, time |
 | set | `set_id`, template id and version, filter, N, whether large, selection seed, the hashes of the images it chose from, image hashes, publication date (null until published) |
 

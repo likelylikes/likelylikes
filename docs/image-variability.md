@@ -423,6 +423,10 @@ extra subjects, not from `c3` and `c4`.
   years over eight datasets, against MiVOLO's 5.10. VLMs read grey hair as
   age (+3 to +5 years); MiVOLO barely does.
 
+Estimates go in the pool's `estimates.jsonl` (images.md §7), one line per
+candidate and instrument. The first, for `women-profiles.v1`, are the age
+ranges of a visual review by Claude, neither pinned nor at temperature 0.
+
 **Bands.** A single estimate errs by about 5 years, so the per-image band must
 be wide (reject beyond about ±10 years). The pool check can be tight: for each
 age value, the mean estimate within about ±3 years of the parameter, and the

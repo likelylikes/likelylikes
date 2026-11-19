@@ -154,6 +154,19 @@ test('the check catches a set whose seed or considered list does not reproduce i
   assert.ok((await rules(dir)).includes('selection'))
 })
 
+test('estimates pass the check when sound, and are caught when they name no candidate or a bad range', async () => {
+  const dir = copy()
+  const files = paths(dir, TEST_POOL)
+  const good = { subject: 's001', candidate: 1, measure: 'apparent_age', low: 24, high: 30, by: 'test estimator', time: '2026-11-19T00:00:00+00:00' }
+  appendJsonl(files.estimates, [good, { ...good, subject: 's002', low: 27, high: 27 }])
+  assert.deepEqual(await rules(dir), [])
+  appendJsonl(files.estimates, [
+    { ...good, subject: 's999' }, { ...good, low: 31 }, { ...good, measure: 'height' }, { ...good, by: ' ' }, { ...good, time: 'later' },
+  ])
+  const { problems } = await check(dir)
+  assert.equal(problems.filter(p => p.rule === 'estimates').length, 5)
+})
+
 test('the check catches a considered list out of pool order', async () => {
   const dir = copy()
   const file = join(setsDir(dir), 'test-red-12.json')

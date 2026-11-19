@@ -103,6 +103,23 @@ export interface ImageRecord {
   time: string
 }
 
+/**
+ * One instrument's estimate of something a candidate shows, such as its apparent age: a range,
+ * low = high for a point estimate. Estimates inform curation; they decide nothing on their own.
+ */
+export interface Estimate {
+  subject: string
+  candidate: number
+  measure: string
+  low: number
+  high: number
+  /** the instrument, named precisely enough to repeat: a model and how it was used */
+  by: string
+  time: string
+}
+
+export const MEASURES = ['apparent_age'] as const
+
 export interface SetRecord {
   set_id: string
   template: string
@@ -142,6 +159,7 @@ export function paths(root: string, pool: string) {
     subjects: join(dir, 'subjects.jsonl'),
     generations: join(dir, 'generations.jsonl'),
     curation: join(dir, 'curation.jsonl'),
+    estimates: join(dir, 'estimates.jsonl'),
     images: join(dir, 'images.jsonl'),
     sheets: join(dir, 'sheets'),
     served: join(dir, 'served'),

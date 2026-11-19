@@ -42,6 +42,7 @@ images/
     subjects.jsonl                    one line per subject, with its prompt
     generations.jsonl                 one line per candidate
     curation.jsonl                    one line per decision
+    estimates.jsonl                   one line per estimate, such as apparent age
     images.jsonl                      one line per accepted image
     sheets/<sheet>.<ext>              sheet originals, byte for byte (§2.3a)
     sheets/<sheet>.md                 the prompt as typed into the app
@@ -379,6 +380,8 @@ Beyond §8, the offline part checks that:
   crop is its cell's; no file in `sheets/` lacks a record;
 - the size rules of images.md §8 apply to candidates not rejected, since
   the tools reject a file of the wrong size before anyone sees it;
+- every estimate names a candidate that exists, a known measure, a range
+  with low at most high, its instrument and a time;
 - every image has an accept somewhere in the curation log, and its served
   region is the one its template gives today, so an inset changed after
   encoding shows;

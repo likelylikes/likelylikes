@@ -6,10 +6,10 @@ import { basename, join } from 'node:path'
 import sharp from 'sharp'
 import { parseCli, run } from './lib/cli.ts'
 import {
-  MIN_INSET_FRACTIONAL, REJECT_REASONS, candidateKey, cellCrop, combinations, designProblems, exactGrid, extension,
+  MEASURES, MIN_INSET_FRACTIONAL, REJECT_REASONS, candidateKey, cellCrop, combinations, designProblems, exactGrid, extension,
   has, isExcluded, lastDecisions, listPools, loadTemplate, normalisePrompt, parsePool, paths, poolName, readJson,
   readJsonl, renderPrompt, sameJson, servedRegion, setsDir, sha256, sheetNumber, subjectNumber, withdrawnImages,
-  type Decision, type Design, type Generation, type ImageRecord, type SetRecord, type Subject, type Template,
+  type Decision, type Design, type Estimate, type Generation, type ImageRecord, type SetRecord, type Subject, type Template,
 } from './lib/records.ts'
 import { matchesFilter, selectFrom } from './lib/select.ts'
 
@@ -34,6 +34,7 @@ interface Pool {
   subjects: Subject[]
   generations: Generation[]
   curation: Decision[]
+  estimates: Estimate[]
   images: ImageRecord[]
   withdrawn: Set<string>
 }
@@ -43,7 +44,7 @@ type Report = (rule: string, detail: string) => void
 export async function check(root: string): Promise<{ problems: Problem[]; summary: string }> {
   const problems: Problem[] = []
   const pools = new Map<string, Pool>()
-  const counts = { pools: 0, subjects: 0, generations: 0, decisions: 0, images: 0, sets: 0 }
+  const counts = { pools: 0, subjects: 0, generations: 0, decisions: 0, estimates: 0, images: 0, sets: 0 }
   for (const name of listPools(root)) {
     const report: Report = (rule, detail) => problems.push({ where: name, rule, detail })
     let pool: Pool
@@ -58,19 +59,21 @@ export async function check(root: string): Promise<{ problems: Problem[]; summar
     counts.subjects += pool.subjects.length
     counts.generations += pool.generations.length
     counts.decisions += pool.curation.length
+    counts.estimates += pool.estimates.length
     counts.images += pool.images.length
     checkTemplate(pool.template, report)
     checkSubjects(root, pool, report)
     checkGenerations(pool, report)
     if (pool.template.sheet) checkSheets(root, pool, report)
     checkCuration(pool, report)
+    checkEstimates(pool, report)
     await checkImages(root, pool, report)
   }
   for (const set of loadSets(root, problems)) {
     counts.sets++
     checkSet(set, pools, (rule, detail) => problems.push({ where: `set ${set.set_id}`, rule, detail }))
   }
-  const summary = `${counts.pools} pools, ${counts.subjects} subjects, ${counts.generations} generations, ${counts.decisions} decisions, ${counts.images} images, ${counts.sets} sets`
+  const summary = `${counts.pools} pools, ${counts.subjects} subjects, ${counts.generations} generations, ${counts.decisions} decisions, ${counts.estimates} estimates, ${counts.images} images, ${counts.sets} sets`
   return { problems, summary }
 }
 
@@ -84,7 +87,23 @@ function loadPool(root: string, name: string): Pool {
     name, template, images, curation,
     subjects: readJsonl<Subject>(files.subjects),
     generations: readJsonl<Generation>(files.generations),
+    estimates: readJsonl<Estimate>(files.estimates),
     withdrawn: withdrawnImages(images, curation),
+  }
+}
+
+/** Estimates name a candidate that exists, a known measure, a sound range, an instrument and a time. */
+function checkEstimates(pool: Pool, report: Report): void {
+  const gens = new Set(pool.generations.map(g => candidateKey(g.subject, g.candidate)))
+  for (const e of pool.estimates) {
+    const what = `estimate for ${e.subject} c${e.candidate}`
+    if (!gens.has(candidateKey(e.subject, e.candidate))) report('estimates', `${what}: no such candidate`)
+    if (!(MEASURES as readonly string[]).includes(e.measure)) report('estimates', `${what}: measure ${e.measure} is not one of ${MEASURES.join(', ')}`)
+    if (!(typeof e.low === 'number' && typeof e.high === 'number' && Number.isFinite(e.low) && Number.isFinite(e.high) && e.low >= 0 && e.low <= e.high && e.high <= 150)) {
+      report('estimates', `${what}: range ${e.low}..${e.high} is not 0 <= low <= high <= 150`)
+    }
+    if (typeof e.by !== 'string' || !e.by.trim()) report('estimates', `${what}: no instrument named`)
+    if (typeof e.time !== 'string' || Number.isNaN(Date.parse(e.time))) report('estimates', `${what}: time ${JSON.stringify(e.time)} is not a date`)
   }
 }
 
