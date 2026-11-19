@@ -2,9 +2,9 @@
 
 Status: partly implemented. The tools that carry out
 [images.md](images.md) §4–§5, from a template file to frozen sets in R2.
-Implemented under `tools/images/`: `sheets` (§2.3a), `accept` (§2.4a),
-`encode` without signing (§2.5), `freeze` (§2.7) and the offline check (§3).
-The rest is specification.
+Implemented under `tools/images/`: `sheets` (§2.3a), `accept` and `reject`
+(§2.4a), `encode` without signing (§2.5), `freeze` (§2.7) and the offline
+check (§3). The rest is specification.
 
 ## Summary
 
@@ -162,35 +162,55 @@ before subjects: the prompt names the values, and the cells become the
 subjects.
 
 ```
-npm run images:sheets -- --pool women-profiles.v1 work/aistudio/*.jpg
+npm run images:sheets -- --pool women-profiles.v1 work/aistudio/*
 ```
 
 - Each image is a JPEG, PNG or WebP download, with the prompt as typed into
-  the app beside it in a file of the same name ending `.md` or `.txt`. The
-  prompt must be the template's prompt with one value per slot, whitespace
-  aside; the step finds those values, so it never asks for them, and refuses
-  a prompt that matches no combination, naming the first character that
-  differs. A typing slip in the app shows up here.
-- Each sheet must be square with sides divisible by the grid, and its cells
-  at least the served size. The step checks that the cells sit exactly on
-  the grid lines: at each internal line it takes the mean brightness step
-  between neighbouring pixel columns (or rows) at offsets −8 to 8, and the
-  step across the line must be the largest and at least twice their median.
-  A grid off by a pixel peaks elsewhere; an image with no grid has no peak.
-  It refuses a sheet that fails, with the numbers.
+  the app beside it in a file of the same name ending `.md` or `.txt`;
+  prompt files given among the images are skipped, so a folder can be
+  passed whole. Paths are read from where `npm` was run.
+- The prompt must be the template's prompt with one value per slot; the
+  step finds those values, so it never asks for them. The comparison folds
+  what an editor changes on a paste: whitespace and line endings, a byte
+  order mark, typographic quotes and dashes, Unicode compatibility forms.
+  It refuses a prompt that matches no combination, naming the first
+  character that differs, with anything invisible escaped. A typing slip in
+  the app shows up here.
+- A sheet's cells must be square, and the sheet as large as the pool's
+  other sheets; the sheet itself need not be square. Grid line k of n over
+  a side of s pixels lies at round(k·s/n), so a 3 × 3 or 5 × 5 grid works on
+  a 4096-pixel sheet. Cells less the inset must be at least the served size.
+- The step checks that the cells sit on the grid lines: at each internal
+  line it takes the mean brightness step between neighbouring pixel columns
+  (or rows) at offsets −8 to 8, and the step across the line must be the
+  largest and at least twice their median. Where the line falls between
+  two pixels, a seam on either side counts, and the template's inset must
+  be at least 2 to cover that pixel. A grid off by a pixel peaks elsewhere;
+  an image with no grid has no peak. It refuses a sheet that fails, with the
+  numbers, and a sheet whose EXIF orientation says its pixels are stored
+  rotated.
 - The generation time is the latest RFC 3161 time-stamp in the file's C2PA
-  manifests, read from the DER of its TSTInfo; a sheet without one needs
-  `--time`. The manifest itself is not validated.
-- Every sheet is verified before anything is written. A sheet already in the
-  pool, by SHA-256, is skipped, so the step can be re-run on a folder.
+  manifests, read from the DER of its TSTInfo, with a JPEG's APP11 segments
+  joined first; it is written to the second. A sheet without one needs
+  `--time` with its zone, such as `2026-11-02T07:21:09Z`, and `--time` is
+  refused for a sheet that has one. The manifest itself is not validated.
+- A sheet already in the pool, by SHA-256, is skipped before anything else,
+  so the step can be re-run on a folder. Every new sheet is verified before
+  anything is written.
 - Sheets are numbered `g01`, `g02`, … after the pool's last, in generation
   order, and copied byte for byte to `images/pools/<pool>/sheets/<sheet>.<ext>`,
-  in git, with the prompt file beside it as `<sheet>.md`.
+  in git, with the prompt file beside it as `<sheet>.md`. A file already
+  there with the same bytes is fine, so a run cut short can be repeated;
+  one with other bytes stops the step.
+- The design's `per_value` is raised for each value the pool now holds more
+  subjects of than it says, since a sheet pool's design records what its
+  sheets hold.
 - Their subjects are made then, one per cell, numbered after the pool's last
   subject in the order `random.Random(seed).shuffle` gives the cells listed
   sheet by sheet, row by row, where the seed is the design's plus the number
   of subjects already in the pool. Each is logged with candidate 1, the
-  sheet's hash and size, the cell's crop, the template's provider, model and
+  sheet's hash and size, the cell's crop (its top left on the grid lines,
+  its side the floor of the cell size), the template's provider, model and
   settings, how the file was obtained (`--via`, default `browser download`)
   and the time.
 - A rejected cell is not regenerated alone; its subject stays without an
@@ -218,19 +238,31 @@ A local web page served from `localhost`. It never leaves the machine.
 - Lists the subjects whose candidates have all failed, for `generate --more`
   or another `manual` pass.
 
-### 2.4a `accept --all`: a prototype pool taken unreviewed
+### 2.4a `accept` and `reject`: decisions from the command line
 
 ```
+npm run images:reject -- --pool <pool> --subjects s009,s020 --reason age --note "<why>"
 npm run images:accept -- --pool <pool> --all --note "<who decided, and why>"
+npm run images:accept -- --pool <pool> --subjects s009 --note "<who looked, and what they saw>"
 ```
 
-When the pool's owner decides to use a pool before anyone curates it, this
-appends an accept for every subject that has none, on its lowest-numbered
-candidate not rejected, which is what "first that passes" picks when nobody
-looks. The note, required, records who decided and that the images were not
-reviewed. It is refused for a template that declares tags, since an accept
-must record them. Curating later still works: a reject in the pool view
-withdraws the image, and a set built on it must be frozen again.
+For a pool its owner decides to use before the curate page exists or before
+anyone curates it. Each appends to `curation.jsonl` like the curate step; the
+note, required, records who decided and on what.
+
+- `reject` rejects each named subject's candidate (`--candidate`, default 1)
+  with one of images.md §4's reasons. A candidate with an image withdraws it,
+  and the step names the sets that held it, which must be frozen again; it
+  is refused for an image in a published set.
+- `accept --all` accepts every subject nobody has decided on yet, on its first
+  candidate, which is what "first that passes" picks when nobody looks. A
+  subject with any decision, such as one held back by a reject, is left as
+  it is.
+- `accept --subjects` accepts each named subject's candidate, overturning an
+  earlier reject of it; it is refused when a lower-numbered candidate is not
+  rejected or another is accepted.
+- Both forms of `accept` are refused for a template that declares tags,
+  since an accept must record them.
 
 ### 2.5 `encode`: accepted candidates to served images
 
@@ -241,9 +273,10 @@ For each accepted candidate with no image record:
   the curator rejects the candidate in the pool view and the subject reopens
   (§2.4). The check's rule that every accept has an image (images.md §8)
   stops a subject from dropping out unnoticed;
-- decode, crop to the cell if it came from a sheet, convert to sRGB, scale
-  down to the template's served size, and encode in its served format at
-  its quality. A crop adds a `c2pa.cropped` action before `c2pa.transcoded`;
+- decode, crop to the cell less the template's inset if it came from a
+  sheet, convert to sRGB, scale down to the template's served size, and
+  encode in its served format at its quality. A crop adds a `c2pa.cropped`
+  action before `c2pa.transcoded`;
 - sign a C2PA manifest for the result with `c2patool` or its library,
   passing the original as the parent (`--parent`; without it, c2patool makes
   the resized file its own parent and silently drops the generator's
@@ -261,13 +294,21 @@ For each accepted candidate with no image record:
 A published image is never re-encoded: a new encoder or a new signature
 gives new bytes, and new bytes are a new image.
 
-**As implemented.** sharp crops, scales with Lanczos-3 and encodes WebP at
-the template's quality with effort 4; the output carries no metadata. The
-same input and sharp version give the same bytes. Signing is not
-implemented, because there is no signing certificate yet (images.md §9), so
-the step runs only as `npm run images:encode -- --pool <pool> --unsigned`,
-which records `"signed": false`. Such an image is a prototype: the check
-refuses it in a published set, and signing it later makes a new image.
+**As implemented.** sharp decodes at its default level for untrusted input,
+which refuses a corrupt file, and refuses an original whose EXIF orientation
+says its pixels are stored rotated. It processes in sRGB, so a 16-bit
+wide-gamut original is converted rather than read as sRGB numbers; crops;
+scales with Lanczos-3; and encodes WebP at the template's quality with
+effort 4. The output carries no metadata, and the same input and sharp
+version give the same bytes. Each image record is appended as its file is
+written, so a run cut short leaves no file without its record. A candidate
+it must refuse, such as one whose original changed, is named at the end
+while the rest are encoded. It refuses to add to a pool encoded by another
+encoder version. Signing is not implemented, because there is no signing
+certificate yet (images.md §9), so the step runs only as
+`npm run images:encode -- --pool <pool> --unsigned`, which records
+`"signed": false`. Such an image is a prototype: the check refuses it in a
+published set, and signing it later makes a new image.
 
 ### 2.6 `upload`: files to R2
 
@@ -287,14 +328,17 @@ npm run images:freeze -- --pool <pool> --set <set_id> --n <N> [--filter ethnicit
 
 - Chooses N of the matching images not withdrawn (§2.4) as images.md §5
   says, with a selection seed, which it draws and records when none is
-  given. The images considered are the pool's image records at that moment,
-  and the set records how many there were (`pool_images`), so re-running it
-  reads the same lines however much the pool has grown since.
-- The choice: shuffle the matching images with
-  `random.Random(seed).shuffle`, in pool order, then take N one at a time,
-  each the first in shuffled order whose values for the free parameters
-  (those the filter does not fix to one value) have been taken least so far,
-  summed over those parameters.
+  given. The set records the images it chose from (`considered`: their
+  hashes, in pool order), so re-running it gives the same set whatever
+  happens to the pool later: new images, a withdrawal, or a log whose lines
+  a merge put in another order.
+- The choice: shuffle the considered images with
+  `random.Random(seed).shuffle`, then take N one at a time, each the first in
+  shuffled order whose values for the free parameters (those the filter does
+  not fix to one value) have been taken least so far, summed over those
+  parameters. With one free parameter that spreads the set as evenly as the
+  images allow; with several, a greedy choice can miss an even split when a
+  combination is scarce.
 - N is 12 to 16; `--large` allows more, up to the pool, and records the set
   as large (images.md §5).
 - Refuses when fewer than N images match, and refuses to overwrite an
@@ -310,15 +354,25 @@ images.md §8 is the definition. The offline part runs inside
 delivery check of §8 runs after every deploy; neither is implemented yet.
 Beyond §8, the offline part checks that:
 
+- every template and design is well formed: the fields of images.md §7
+  with the right types, and a design naming only the template's parameters
+  and values;
 - every subject's prompt is its template rendered with its values;
 - each value's subjects meet the design: the count in `per_value`, and the
-  balance rule of §2.1, read as: each value of each balanced parameter, and
-  each allowed combination of them, appears equally often to within one;
-- every sheet is in git with its recorded SHA-256, its prompt file is its
-  subjects' prompt, whitespace aside, and its generations agree on its hash,
-  size, format and time;
-- every served file is in git, its content matches its name and record, and
-  no served file lacks an image record;
+  balance rule of §2.1, read as: within each value, each possible value of
+  each balanced parameter, and each allowed combination of them, appears
+  equally often to within one, where "allowed" applies the exclusions with
+  the stratify value included;
+- every sheet a subject or generation names is in git with its recorded
+  SHA-256, its prompt file is its subjects' prompt as the step compares
+  them, its generations agree on its hash, size, format and time, each of
+  its cells has exactly one subject with exactly one generation, and every
+  crop is its cell's; no file in `sheets/` lacks a record;
+- the size rules of images.md §8 apply to candidates not rejected, since
+  the tools reject a file of the wrong size before anyone sees it;
+- every image has an accept somewhere in the curation log;
+- every served file is in git and readable, its content matches its name
+  and record, and no served file lacks an image record;
 - the logs refer only to subjects and candidates that exist, and nothing
   appears twice.
 

@@ -4,15 +4,14 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import sharp from 'sharp'
-import { run } from './lib/cli.ts'
-import { parseCli } from './lib/cli.ts'
+import { parseCli, run } from './lib/cli.ts'
 import {
-  candidateKey, combinations, extension, isExcluded, lastDecisions, listPools, loadTemplate, parsePool,
-  paths, poolName, readJson, readJsonl, renderPrompt, sameJson, setsDir, sha256, sheetNumber, subjectNumber,
-  withdrawnImages,
+  MIN_INSET_FRACTIONAL, REJECT_REASONS, candidateKey, cellCrop, combinations, designProblems, exactGrid, extension,
+  has, isExcluded, lastDecisions, listPools, loadTemplate, normalisePrompt, parsePool, paths, poolName, readJson,
+  readJsonl, renderPrompt, sameJson, setsDir, sha256, sheetNumber, subjectNumber, withdrawnImages,
   type Decision, type Design, type Generation, type ImageRecord, type SetRecord, type Subject, type Template,
 } from './lib/records.ts'
-import { selectImages } from './lib/select.ts'
+import { matchesFilter, selectFrom } from './lib/select.ts'
 
 const USAGE = `Usage: npm run images:check
 
@@ -22,7 +21,6 @@ image-pipeline.md §3. Exits non-zero on any problem.`
 export const MIN_N = 12
 export const MAX_N = 16
 export const MIN_AGE = 25
-const REJECT_REASONS = ['defect', 'style', 'parameters', 'age', 'likeness']
 
 export interface Problem {
   where: string
@@ -40,14 +38,14 @@ interface Pool {
   withdrawn: Set<string>
 }
 
-const normalise = (s: string) => s.replace(/\s+/g, ' ').trim()
+type Report = (rule: string, detail: string) => void
 
 export async function check(root: string): Promise<{ problems: Problem[]; summary: string }> {
   const problems: Problem[] = []
   const pools = new Map<string, Pool>()
   const counts = { pools: 0, subjects: 0, generations: 0, decisions: 0, images: 0, sets: 0 }
   for (const name of listPools(root)) {
-    const report = (rule: string, detail: string, where = name) => problems.push({ where, rule, detail })
+    const report: Report = (rule, detail) => problems.push({ where: name, rule, detail })
     let pool: Pool
     try {
       pool = loadPool(root, name)
@@ -63,7 +61,8 @@ export async function check(root: string): Promise<{ problems: Problem[]; summar
     counts.images += pool.images.length
     checkTemplate(pool.template, report)
     checkSubjects(root, pool, report)
-    checkGenerations(root, pool, report)
+    checkGenerations(pool, report)
+    if (pool.template.sheet) checkSheets(root, pool, report)
     checkCuration(pool, report)
     await checkImages(root, pool, report)
   }
@@ -89,27 +88,20 @@ function loadPool(root: string, name: string): Pool {
   }
 }
 
-type Report = (rule: string, detail: string) => void
-
 function checkTemplate(t: Template, report: Report): void {
   for (const value of Object.keys(t.parameters['age'] ?? {})) {
     if (!(Number(value) >= MIN_AGE)) report('age', `template age value ${value} is under ${MIN_AGE}`)
-  }
-  if (t.sheet && !(Number.isInteger(t.sheet.rows) && t.sheet.rows > 0 && Number.isInteger(t.sheet.columns) && t.sheet.columns > 0)) {
-    report('template', `sheet rows and columns must be positive integers: ${JSON.stringify(t.sheet)}`)
   }
 }
 
 function checkValues(t: Template, values: Record<string, string>, what: string, report: Report): void {
   for (const name of Object.keys(t.parameters)) {
-    const v = values[name]
-    if (v === undefined) report('values', `${what}: no value for ${name}`)
-    else if (!(v in t.parameters[name]!)) report('values', `${what}: ${name} = ${v} is not in the template's list`)
+    if (!has(values, name)) report('values', `${what}: no value for ${name}`)
+    else if (!has(t.parameters[name]!, values[name]!)) report('values', `${what}: ${name} = ${values[name]} is not in the template's list`)
   }
-  for (const name of Object.keys(values)) if (!(name in t.parameters)) report('values', `${what}: ${name} is not a parameter`)
+  for (const name of Object.keys(values)) if (!has(t.parameters, name)) report('values', `${what}: ${name} is not a parameter`)
   if (isExcluded(t, values)) report('values', `${what}: ${JSON.stringify(values)} is an excluded combination`)
-  const age = values['age']
-  if (age !== undefined && !(Number(age) >= MIN_AGE)) report('age', `${what}: age ${age} is under ${MIN_AGE}`)
+  if (has(values, 'age') && !(Number(values['age']) >= MIN_AGE)) report('age', `${what}: age ${values['age']} is under ${MIN_AGE}`)
 }
 
 function checkSubjects(root: string, pool: Pool, report: Report): void {
@@ -135,41 +127,50 @@ function checkSubjects(root: string, pool: Pool, report: Report): void {
   checkDesign(root, pool, report)
 }
 
-/** image-pipeline.md §2.1: per_value counts, each balanced value equally often to within one, and combinations likewise. */
+/**
+ * image-pipeline.md §2.1: per_value counts; within each value, each balanced parameter's possible
+ * values, and each allowed combination of them, equally often to within one. "Allowed" applies the
+ * exclusions with the stratify value included, so an exclusion that names it counts.
+ */
 function checkDesign(root: string, pool: Pool, report: Report): void {
   const file = paths(root, pool.name).design
   if (!existsSync(file)) {
     report('design', 'no design.json')
     return
   }
-  const d = readJson<Design>(file)
-  const t = pool.template
-  if (d.template !== t.id || d.version !== t.version) report('design', `design is for ${d.template} v${d.version}`)
-  if (!(d.stratify in t.parameters)) {
-    report('design', `stratify parameter ${d.stratify} is not in the template`)
+  let d: Design
+  try {
+    d = readJson<Design>(file)
+  } catch (e) {
+    report('design', (e as Error).message)
     return
   }
+  const t = pool.template
+  const problems = designProblems(d, t)
+  for (const p of problems) report('design', p)
+  if (problems.length) return
   for (const value of Object.keys(t.parameters[d.stratify]!)) {
     const group = pool.subjects.filter(s => s.values[d.stratify] === value)
     const want = d.per_value[value] ?? 0
     if (group.length !== want) report('design', `${d.stratify} = ${value}: ${group.length} subjects, design says ${want}`)
-    if (!group.length) continue
+    if (!group.length || !d.balance.length) continue
+    const allowed = combinations(t, [d.stratify, ...d.balance]).filter(c => c[d.stratify] === value)
     for (const name of d.balance) {
-      const tally = Object.keys(t.parameters[name] ?? {}).map(v => group.filter(s => s.values[name] === v).length)
+      const possible = [...new Set(allowed.map(c => c[name]!))]
+      const tally = possible.map(v => group.filter(s => s.values[name] === v).length)
       if (Math.max(...tally) - Math.min(...tally) > 1) report('design', `${d.stratify} = ${value}: ${name} values appear ${tally.join('/')} times, not equally to within one`)
     }
-    if (d.balance.length) {
-      const tally = combinations(t, d.balance).map(c => group.filter(s => d.balance.every(n => s.values[n] === c[n])).length)
-      if (Math.max(...tally) - Math.min(...tally) > 1) report('design', `${d.stratify} = ${value}: a combination of ${d.balance.join(', ')} repeats before every combination has appeared`)
-    }
+    const tally = allowed.map(c => group.filter(s => d.balance.every(n => s.values[n] === c[n])).length)
+    if (Math.max(...tally) - Math.min(...tally) > 1) report('design', `${d.stratify} = ${value}: a combination of ${d.balance.join(', ')} repeats before every combination has appeared`)
   }
 }
 
-function checkGenerations(root: string, pool: Pool, report: Report): void {
+function checkGenerations(pool: Pool, report: Report): void {
   const t = pool.template
   const subjects = new Map(pool.subjects.map(s => [s.subject, s]))
+  const last = lastDecisions(pool.curation)
   const keys = new Set<string>()
-  const first = pool.generations[0]
+  let reference: Generation | undefined
   for (const g of pool.generations) {
     const what = `${g.subject} c${g.candidate}`
     const s = subjects.get(g.subject)
@@ -180,67 +181,94 @@ function checkGenerations(root: string, pool: Pool, report: Report): void {
     if (g.provider !== t.model.provider || g.model !== t.model.id || !sameJson(g.settings, t.settings) || g.service !== t.model.service) {
       report('model', `${what}: provider, model or settings differ from the template's`)
     }
-    if (first && (g.width !== first.width || g.height !== first.height)) report('size', `${what}: original is ${g.width}x${g.height}, others ${first.width}x${first.height}`)
     if (t.sheet) checkCrop(t, g, s, what, report)
-    else if (g.width !== g.height || g.width < t.served.width || g.height < t.served.height) {
+    // The size rules are for candidates still in play; one the tools rejected for its size is not.
+    if (last.get(candidateKey(g.subject, g.candidate))?.decision === 'reject') continue
+    reference ??= g
+    if (g.width !== reference.width || g.height !== reference.height) report('size', `${what}: original is ${g.width}x${g.height}, others ${reference.width}x${reference.height}`)
+    if (!t.sheet && (g.width !== g.height || g.width < t.served.width || g.height < t.served.height)) {
       report('size', `${what}: original ${g.width}x${g.height} is not square and at least ${t.served.width}x${t.served.height}`)
     }
   }
-  if (t.sheet) checkSheets(root, pool, report)
 }
 
 function checkCrop(t: Template, g: Generation, s: Subject | undefined, what: string, report: Report): void {
   const { rows, columns } = t.sheet!
-  const c = g.crop
-  if (!g.sheet || !c) {
+  const inset = t.sheet!.inset ?? 0
+  if (!g.sheet || !g.crop) {
     report('sheet', `${what}: the template generates sheets, but the generation has no sheet and crop`)
     return
   }
-  const cell = g.width / columns
-  const ok = Number.isInteger(cell) && g.height / rows === cell && c.width === cell && c.height === cell &&
-    c.x % cell === 0 && c.y % cell === 0 && c.x >= 0 && c.y >= 0 && c.x + c.width <= g.width && c.y + c.height <= g.height
-  if (!ok) {
-    report('sheet', `${what}: crop ${JSON.stringify(c)} is not a cell of the ${rows}x${columns} grid of a ${g.width}x${g.height} sheet`)
+  if (g.width * rows !== g.height * columns) {
+    report('sheet', `${what}: a ${g.width}x${g.height} sheet does not hold ${rows}x${columns} square cells`)
     return
   }
-  if (cell < t.served.width || cell < t.served.height) report('size', `${what}: cell ${cell} px is smaller than the served size`)
-  if (s && (s.sheet !== g.sheet || s.cell?.row !== c.y / cell + 1 || s.cell?.column !== c.x / cell + 1)) {
-    report('sheet', `${what}: crop does not match the subject's sheet and cell`)
+  if (!s?.cell || s.sheet !== g.sheet) {
+    report('sheet', `${what}: the generation's sheet is not the subject's`)
+    return
   }
+  const want = cellCrop(g.width, g.height, rows, columns, s.cell.row, s.cell.column)
+  if (!sameJson(g.crop, want)) report('sheet', `${what}: crop ${JSON.stringify(g.crop)} is not cell r${s.cell.row}c${s.cell.column} ${JSON.stringify(want)}`)
+  if (!exactGrid(g.width, g.height, rows, columns) && inset < MIN_INSET_FRACTIONAL) report('sheet', `${what}: the grid does not divide the sheet, so the inset must be at least ${MIN_INSET_FRACTIONAL}`)
+  const served = want.width - 2 * inset
+  if (served < t.served.width || served < t.served.height) report('size', `${what}: cell ${want.width} px, ${served} px less the inset, is smaller than the served size`)
 }
 
-/** Every cell of every sheet belongs to exactly one subject; the sheet and its prompt are in git. */
+/** Every sheet a subject or generation names is in git, whole; every cell has one subject; nothing else is in sheets/. */
 function checkSheets(root: string, pool: Pool, report: Report): void {
-  const t = pool.template
-  const { rows, columns } = t.sheet!
-  const bySheet = new Map<string, Generation[]>()
-  for (const g of pool.generations) if (g.sheet) bySheet.set(g.sheet, [...(bySheet.get(g.sheet) ?? []), g])
-  const hashes = new Map<string, string>()
+  const { rows, columns } = pool.template.sheet!
   const files = paths(root, pool.name)
-  for (const [sheet, gens] of bySheet) {
+  const names = new Set<string>([...pool.subjects.flatMap(s => (s.sheet ? [s.sheet] : [])), ...pool.generations.flatMap(g => (g.sheet ? [g.sheet] : []))])
+  const hashes = new Map<string, string>()
+  const expected = new Set<string>()
+  for (const sheet of [...names].sort()) {
     try {
       sheetNumber(sheet)
     } catch (e) {
       report('sheet', (e as Error).message)
     }
-    const g0 = gens[0]!
+    const subjects = pool.subjects.filter(s => s.sheet === sheet)
+    const gens = pool.generations.filter(g => g.sheet === sheet)
+    for (const s of subjects) {
+      const own = gens.filter(g => g.subject === s.subject)
+      if (own.length !== 1 || own[0]!.candidate !== 1) report('sheet', `${s.subject}: has ${own.length} generations from ${sheet}; a sheet's subject has exactly one, candidate 1`)
+    }
+    const cells = subjects.map(s => `${s.cell?.row},${s.cell?.column}`)
+    const inGrid = subjects.every(s => s.cell && Number.isInteger(s.cell.row) && Number.isInteger(s.cell.column) && s.cell.row >= 1 && s.cell.row <= rows && s.cell.column >= 1 && s.cell.column <= columns)
+    if (!inGrid || new Set(cells).size !== cells.length || cells.length !== rows * columns) {
+      report('sheet', `${sheet}: ${subjects.length} subjects over ${new Set(cells).size} cells; want each of the ${rows * columns} cells once`)
+    }
+    const g0 = gens[0]
+    if (!g0) {
+      report('sheet', `${sheet}: subjects name it, but no generation records it`)
+      continue
+    }
     if (gens.some(g => g.sha256 !== g0.sha256 || g.width !== g0.width || g.height !== g0.height || g.format !== g0.format || g.time !== g0.time)) {
       report('sheet', `${sheet}: its generations disagree on the sheet's hash, size, format or time`)
     }
     const other = hashes.get(g0.sha256)
     if (other) report('sheet', `${sheet} and ${other} are the same file`)
     hashes.set(g0.sha256, sheet)
-    const cells = new Set(gens.filter(g => g.crop).map(g => `${g.crop!.x},${g.crop!.y}`))
-    if (cells.size !== gens.length || gens.length !== rows * columns) report('sheet', `${sheet}: ${gens.length} subjects over ${cells.size} cells; want each of ${rows * columns} cells once`)
-    const image = join(files.sheets, `${sheet}.${extension(g0.format)}`)
+    let image: string
+    try {
+      image = join(files.sheets, `${sheet}.${extension(g0.format)}`)
+    } catch (e) {
+      report('sheet', `${sheet}: ${(e as Error).message}`)
+      continue
+    }
+    expected.add(basename(image))
+    expected.add(`${sheet}.md`)
     if (!existsSync(image)) report('sheet', `${sheet}: ${image} is missing`)
     else if (sha256(readFileSync(image)) !== g0.sha256) report('sheet', `${sheet}: ${image} does not have the recorded SHA-256`)
     const promptFile = join(files.sheets, `${sheet}.md`)
-    const prompts = new Set(gens.map(g => pool.subjects.find(s => s.subject === g.subject)?.prompt))
+    const prompts = new Set(subjects.map(s => s.prompt))
     if (!existsSync(promptFile)) report('sheet', `${sheet}: ${promptFile} is missing`)
-    else if (prompts.size !== 1 || normalise(readFileSync(promptFile, 'utf8')) !== normalise([...prompts][0] ?? '')) {
+    else if (prompts.size !== 1 || normalisePrompt(readFileSync(promptFile, 'utf8')) !== normalisePrompt([...prompts][0]!)) {
       report('sheet', `${sheet}: the prompt as typed is not its subjects' prompt`)
     }
+  }
+  for (const name of existsSync(files.sheets) ? readdirSync(files.sheets) : []) {
+    if (!expected.has(name)) report('sheet', `${join(files.sheets, name)}: no record names it`)
   }
 }
 
@@ -251,9 +279,9 @@ function checkCuration(pool: Pool, report: Report): void {
     const what = `${d.subject} c${d.candidate}`
     if (!gens.has(candidateKey(d.subject, d.candidate))) report('curation', `${what}: decision on a candidate never generated`)
     if (d.decision !== 'accept' && d.decision !== 'reject') report('curation', `${what}: decision ${d.decision}`)
-    if (d.decision === 'reject' && !REJECT_REASONS.includes(d.reason)) report('curation', `${what}: reject reason ${d.reason} is not one of ${REJECT_REASONS.join(', ')}`)
+    if (d.decision === 'reject' && !(REJECT_REASONS as readonly string[]).includes(d.reason)) report('curation', `${what}: reject reason ${d.reason} is not one of ${REJECT_REASONS.join(', ')}`)
     for (const [name, value] of Object.entries(d.tags ?? {})) {
-      if (!t.tags[name]?.includes(value)) report('tags', `${what}: tag ${name} = ${value} is not one the template allows`)
+      if (!has(t.tags, name) || !t.tags[name]!.includes(value)) report('tags', `${what}: tag ${name} = ${value} is not one the template allows`)
     }
   }
   const last = lastDecisions(pool.curation)
@@ -274,30 +302,39 @@ async function checkImages(root: string, pool: Pool, report: Report): Promise<vo
   const gens = new Map(pool.generations.map(g => [candidateKey(g.subject, g.candidate), g]))
   const subjects = new Map(pool.subjects.map(s => [s.subject, s]))
   const last = lastDecisions(pool.curation)
+  const everAccepted = new Set(pool.curation.filter(d => d.decision === 'accept').map(d => candidateKey(d.subject, d.candidate)))
   const seen = new Set<string>()
   const encoders = new Set<string>()
   for (const img of pool.images) {
-    const what = `image ${img.sha256.slice(0, 12)} (${img.subject} c${img.candidate})`
+    const what = `image ${String(img.sha256).slice(0, 12)} (${img.subject} c${img.candidate})`
     if (seen.has(img.sha256)) report('images', `${what} appears twice`)
     seen.add(img.sha256)
-    const g = gens.get(candidateKey(img.subject, img.candidate))
+    const key = candidateKey(img.subject, img.candidate)
+    const g = gens.get(key)
     if (!g) report('images', `${what}: no such generation`)
     else if (img.original !== g.sha256) report('original', `${what}: original ${img.original} is not the SHA-256 the generation log recorded`)
     if (img.template !== t.id || img.version !== t.version) report('images', `${what}: belongs to ${img.template} v${img.version}`)
     const s = subjects.get(img.subject)
     if (s && !sameJson(img.values, s.values)) report('values', `${what}: values differ from the subject's`)
     checkValues(t, img.values, what, report)
-    const decision = last.get(candidateKey(img.subject, img.candidate))
-    if (!decision) report('curation', `${what}: no accept in the curation log`)
-    else if (decision.decision === 'accept' && !sameJson(img.tags, decision.tags ?? {})) report('tags', `${what}: tags differ from the accept's`)
-    for (const [name, value] of Object.entries(img.tags)) if (!t.tags[name]?.includes(value)) report('tags', `${what}: tag ${name} = ${value} is not allowed`)
+    // An image needs an accept; if its candidate was rejected since, the image is withdrawn, which §8 allows outside sets.
+    if (!everAccepted.has(key)) report('curation', `${what}: no accept in the curation log`)
+    const decision = last.get(key)
+    if (decision?.decision === 'accept' && !sameJson(img.tags, decision.tags ?? {})) report('tags', `${what}: tags differ from the accept's`)
+    for (const [name, value] of Object.entries(img.tags ?? {})) if (!has(t.tags, name) || !t.tags[name]!.includes(value)) report('tags', `${what}: tag ${name} = ${value} is not allowed`)
     if (img.quality !== t.served.quality) report('encoding', `${what}: quality ${img.quality}, template says ${t.served.quality}`)
     encoders.add(`${img.encoder} ${img.encoder_version}`)
     if (typeof img.signed !== 'boolean') report('images', `${what}: signed must be true or false`)
     if (img.width !== t.served.width || img.height !== t.served.height || img.format !== t.served.format) {
       report('served', `${what}: record says ${img.format} ${img.width}x${img.height}, template says ${t.served.format} ${t.served.width}x${t.served.height}`)
     }
-    const file = join(files.served, `${img.sha256}.${extension(img.format)}`)
+    let file: string
+    try {
+      file = join(files.served, `${img.sha256}.${extension(img.format)}`)
+    } catch (e) {
+      report('served', `${what}: ${(e as Error).message}`)
+      continue
+    }
     if (!existsSync(file)) {
       report('served', `${what}: ${file} is missing`)
       continue
@@ -305,9 +342,13 @@ async function checkImages(root: string, pool: Pool, report: Report): Promise<vo
     const bytes = readFileSync(file)
     if (sha256(bytes) !== img.sha256) report('served', `${what}: file content does not match its name`)
     if (bytes.length !== img.bytes) report('served', `${what}: ${bytes.length} bytes, record says ${img.bytes}`)
-    const meta = await sharp(bytes).metadata()
-    if (meta.format !== t.served.format || meta.width !== t.served.width || meta.height !== t.served.height) {
-      report('served', `${what}: file is ${meta.format} ${meta.width}x${meta.height}, template says ${t.served.format} ${t.served.width}x${t.served.height}`)
+    try {
+      const meta = await sharp(bytes).metadata()
+      if (meta.format !== t.served.format || meta.width !== t.served.width || meta.height !== t.served.height) {
+        report('served', `${what}: file is ${meta.format} ${meta.width}x${meta.height}, template says ${t.served.format} ${t.served.width}x${t.served.height}`)
+      }
+    } catch (e) {
+      report('served', `${what}: ${file} is not an image sharp can read: ${(e as Error).message}`)
     }
   }
   if (encoders.size > 1) report('encoding', `served files come from ${encoders.size} encoder versions: ${[...encoders].join('; ')}`)
@@ -349,24 +390,40 @@ function checkSet(set: SetRecord, pools: Map<string, Pool>, report: Report): voi
     return
   }
   const t = pool.template
+  if (!Array.isArray(set.images) || !Array.isArray(set.considered) || typeof set.filter !== 'object' || set.filter === null) {
+    report('sets', 'images, considered and filter must be present')
+    return
+  }
   if (!Number.isInteger(set.n) || set.images.length !== set.n) report('sets', `N = ${set.n} but ${set.images.length} images`)
   if (new Set(set.images).size !== set.images.length) report('sets', 'an image appears twice')
   if (set.n < MIN_N) report('sets', `N = ${set.n} is under ${MIN_N}`)
   if (set.n > MAX_N && set.large !== true) report('sets', `N = ${set.n} is over ${MAX_N} and the set is not marked large`)
+  if (typeof set.large !== 'boolean') report('sets', 'large must be true or false')
+  if (!(typeof set.seed === 'number' && Number.isSafeInteger(set.seed) && set.seed >= 0)) report('sets', `seed must be a non-negative integer, not ${JSON.stringify(set.seed)}`)
   for (const [name, values] of Object.entries(set.filter)) {
-    if (!t.parameters[name]) report('sets', `filter names ${name}, not a parameter`)
-    else for (const v of values) if (!(v in t.parameters[name]!)) report('sets', `filter allows ${name} = ${v}, not a value`)
+    if (!has(t.parameters, name)) report('sets', `filter names ${name}, not a parameter`)
+    else for (const v of values) if (!has(t.parameters[name]!, v)) report('sets', `filter allows ${name} = ${v}, not a value`)
   }
   const byHash = new Map(pool.images.map(i => [i.sha256, i]))
   for (const hash of set.images) {
     const img = byHash.get(hash)
-    if (!img) report('sets', `${hash.slice(0, 12)} is not an image of ${pool.name}`)
+    if (!img) report('sets', `${String(hash).slice(0, 12)} is not an image of ${pool.name}`)
     else if (pool.withdrawn.has(hash)) report('withdrawn', `${hash.slice(0, 12)} (${img.subject}) is withdrawn`)
     else if (set.published !== null && img.signed !== true) report('signed', `${hash.slice(0, 12)} (${img.subject}) is unsigned, in a published set`)
   }
   if (set.published !== null && (typeof set.published !== 'string' || Number.isNaN(Date.parse(set.published)))) report('sets', `published must be null or a date, not ${JSON.stringify(set.published)}`)
+  // Re-run on what the set recorded it chose from: later withdrawals, new images and log order change nothing.
+  if (new Set(set.considered).size !== set.considered.length) report('selection', 'an image appears twice in considered')
+  const considered: ImageRecord[] = []
+  for (const hash of set.considered) {
+    const img = byHash.get(hash)
+    if (!img) report('selection', `considered ${String(hash).slice(0, 12)} is not an image of ${pool.name}`)
+    else if (!matchesFilter(img.values, set.filter)) report('selection', `considered ${hash.slice(0, 12)} (${img.subject}) does not match the filter`)
+    else considered.push(img)
+  }
+  if (considered.length !== set.considered.length) return
   try {
-    const again = selectImages(t, pool.images, set.pool_images, pool.withdrawn, set.filter, set.n, set.seed)
+    const again = selectFrom(t, considered, set.filter, set.n, set.seed)
     if (!sameJson(again, set.images)) report('selection', 're-running the filter and seed does not reproduce the image list')
   } catch (e) {
     report('selection', (e as Error).message)

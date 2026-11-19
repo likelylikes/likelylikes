@@ -10,6 +10,7 @@
   "scripts": {
     "images:sheets": "node tools/images/sheets.ts",
     "images:accept": "node tools/images/accept.ts",
+    "images:reject": "node tools/images/reject.ts",
     "images:encode": "node tools/images/encode.ts",
     "images:freeze": "node tools/images/freeze.ts",
     "images:check": "node tools/images/check.ts",

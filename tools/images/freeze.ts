@@ -5,10 +5,10 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { parseCli, requirePool, run } from './lib/cli.ts'
 import {
-  loadTemplate, paths, readJsonl, setsDir, withdrawnImages,
+  has, loadTemplate, paths, readJsonl, setsDir, withdrawnImages,
   type Decision, type ImageRecord, type SetRecord, type Template,
 } from './lib/records.ts'
-import { selectImages } from './lib/select.ts'
+import { consider, selectFrom } from './lib/select.ts'
 
 const USAGE = `Usage: npm run images:freeze -- --pool <template>.v<n> --set <set_id> --n <N> [--filter <param>=<value>[,<value>...]]... [--seed <int>] [--large]
 
@@ -27,10 +27,9 @@ export function parseFilter(t: Template, specs: string[]): Record<string, string
     if (!m) throw new Error(`--filter wants <param>=<value>[,<value>...], not ${spec}`)
     const name = m[1]!
     const values = m[2]!.split(',')
-    const known = t.parameters[name]
-    if (!known) throw new Error(`template ${t.id} v${t.version} has no parameter ${name}`)
-    for (const v of values) if (!(v in known)) throw new Error(`parameter ${name} has no value ${v}`)
-    if (filter[name]) throw new Error(`--filter ${name} given twice`)
+    if (!has(t.parameters, name)) throw new Error(`template ${t.id} v${t.version} has no parameter ${name}`)
+    for (const v of values) if (!has(t.parameters[name]!, v)) throw new Error(`parameter ${name} has no value ${v}`)
+    if (has(filter, name)) throw new Error(`--filter ${name} given twice`)
     filter[name] = [...new Set(values)]
   }
   return filter
@@ -40,18 +39,19 @@ export function freezeSet(root: string, pool: string, setId: string, n: number, 
   if (!/^[a-z0-9][a-z0-9.-]*[a-z0-9]$/.test(setId)) throw new Error(`set_id must be lowercase letters, digits, dots and hyphens: ${setId}`)
   if (!Number.isInteger(n) || n < MIN_N) throw new Error(`N must be an integer of at least ${MIN_N}, not ${n}`)
   if (n > MAX_N && !large) throw new Error(`N = ${n} is over ${MAX_N}; pass --large for a large set (images.md §1)`)
+  if (seed !== undefined && !(Number.isSafeInteger(seed) && seed >= 0)) throw new Error(`seed must be a non-negative integer, not ${seed}`)
   const file = join(setsDir(root), `${setId}.json`)
   if (existsSync(file)) throw new Error(`${file} exists; a set is frozen`)
   const t = loadTemplate(root, pool)
   const filter = parseFilter(t, filterSpecs)
   const files = paths(root, pool)
   const images = readJsonl<ImageRecord>(files.images)
-  const withdrawn = withdrawnImages(images, readJsonl<Decision>(files.curation))
+  const considered = consider(images, withdrawnImages(images, readJsonl<Decision>(files.curation)), filter)
   const s = seed ?? randomInt(0, 2 ** 32)
-  const chosen = selectImages(t, images, images.length, withdrawn, filter, n, s)
+  const chosen = selectFrom(t, considered, filter, n, s)
   const record: SetRecord = {
     set_id: setId, template: t.id, version: t.version, filter, n, large, seed: s,
-    pool_images: images.length, images: chosen, published: null,
+    considered: considered.map(i => i.sha256), images: chosen, published: null,
   }
   mkdirSync(setsDir(root), { recursive: true })
   writeFileSync(file, JSON.stringify(record, null, 2) + '\n')
@@ -69,9 +69,8 @@ async function main(): Promise<void> {
   const pool = requirePool(opts.pool, USAGE)
   if (!opts.set || !opts.n) throw new Error(`--set and --n are required\n\n${USAGE}`)
   const seed = opts.seed === undefined ? undefined : Number(opts.seed)
-  if (seed !== undefined && (!Number.isSafeInteger(seed) || seed < 0)) throw new Error(`--seed must be a non-negative integer, not ${opts.seed}`)
   const record = freezeSet(root, pool, opts.set, Number(opts.n), opts.filter ?? [], opts.large ?? false, seed)
-  console.log(`froze ${record.set_id}: ${record.n} images of ${pool}, filter ${JSON.stringify(record.filter)}, seed ${record.seed}`)
+  console.log(`froze ${record.set_id}: ${record.n} of ${record.considered.length} images of ${pool}, filter ${JSON.stringify(record.filter)}, seed ${record.seed}`)
 }
 
 if (import.meta.main) run(main)

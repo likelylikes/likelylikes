@@ -100,7 +100,21 @@ cell. The prompt asks for the whole grid, so the subjects of one sheet share
 one prompt and one generation, and the model sees all of them at once, which
 is what lets it make them differ. The sheet is the original; each cell is a
 crop of it, and the cell, not the sheet, must be square and at least the
-served size. A sheet's subjects get one candidate each.
+served size. A sheet's subjects get one candidate each. Grid lines fall at
+round(k · side / n), so a grid need not divide its sheet: a 3 × 3 grid works
+on a 4096-pixel sheet, its cells 1365 pixels wide.
+
+Colour bleeds a few pixels across the grid lines, from the model's blending
+and JPEG's chroma subsampling, so a cell cut exactly on the lines carries a
+faint line of its neighbour along its edges. The template's `inset` trims
+that many pixels from every side of a cell before it is served; the trimmed
+cell must still be at least the served size, and on a grid that does not
+divide its sheet the inset must be at least 2, to cover the pixel either
+side of a line. The `women-profiles` sheets bleed about 3 pixels, measured
+on every internal edge, and use 8.
+
+A template's served settings, the sheet's inset among them, may be amended
+until its pool's first image is encoded, since they shape no generation.
 
 Some models take no seed and carry no version in their ID; Grok Imagine
 through Workers AI is one (§9). Then nothing can regenerate an image: the
@@ -176,11 +190,12 @@ selected. A set marked **large** may hold more, up to its pool, trading a
 slow start for identity capacity (§1); the mark is explicit, so no set grows
 past 16 by accident.
 
-- When the filter matches more than N images, choose N spread as evenly as N
-  allows over the values of the parameters the filter leaves free. The choice
-  uses a recorded seed, so it can be reproduced. It considers the pool's
-  images as they stood when the set was frozen, and the set records how many
-  there were, so the pool can grow without changing what the choice gives.
+- When the filter matches more than N images, choose N spread over the
+  values of the parameters the filter leaves free: as evenly as N allows
+  for one such parameter, greedily for several (image-pipeline.md §2.7).
+  The choice uses a recorded seed, so it can be reproduced. The set records
+  the images it chose from, so nothing that happens to the pool later, new
+  images or a withdrawal, changes what the choice gives.
 - A set is frozen when it is written, and published when it is deployed,
   which records its publication date. Different images or a different
   filter make a new set.
@@ -335,6 +350,15 @@ and an applied SynthID watermark. Not yet curated.
 - **Recorded after the fact:** the model, settings and prompts were noted
   by hand after generation, and the times are those of the manifests'
   time-stamps.
+- **First set.** `women-profiles.v1-mixed-41` is a large set of 41
+  unsigned prototype images (§4, step 5), all three nationalities, from a
+  pool taken without curation by a person at the owner's request.
+- **Seven held back for age.** An automated visual review of all 48 cells,
+  each flag re-examined by a second, skeptical reviewer, found no defect
+  that requires a reject, but for s009, s020, s023, s032, s039, s044 and s047
+  both agreed a viewer could take her for under 21; neither put anyone
+  under 18. They are rejected for `age`, pending the owner's own look. Four
+  of the seven are Norwegian, so that sheet has 12 images in the set.
 
 ## 7. Records
 
@@ -343,13 +367,13 @@ Manifests are JSON files in git under `images/`; their layout is in
 
 | Record | Fields |
 |---|---|
-| template | id, version, question, prompt, parameters (name → values with fragments), exclusions, tags (name → allowed values), sheet rows and columns if it generates sheets, model (provider, service for a manual one, id, version if any), settings, served width, height, format and quality |
+| template | id, version, question, prompt, parameters (name → values with fragments), exclusions, tags (name → allowed values), sheet rows, columns and inset if it generates sheets, model (provider, service for a manual one, id, version if any), settings, served width, height, format and quality |
 | pool design | template id and version, the parameter subjects are drawn per value of, subjects per value, the parameters balanced within each value, shuffle seed |
 | subject | subject ID, parameter values, rendered prompt, and for a sheet its sheet ID and cell (row, column) |
-| generation log | subject ID, candidate number, SHA-256, width, height and format of the file, provider, model, settings, seed or request ID if any, time; for a sheet, the sheet ID and the cell's crop rectangle, with the hash and size those of the whole sheet |
+| generation log | subject ID, candidate number, SHA-256, width, height and format of the file, provider (and service for a manual one), model, settings, seed or request ID if any, how the file was obtained, time; for a sheet, the sheet ID and the cell's crop rectangle, with the hash and size those of the whole sheet |
 | curation log | subject ID, candidate number, decision, reason, note, tags on an accept, time |
 | image | SHA-256 of the served file and of the original, template id and version, subject ID, candidate number, parameter values, tags, served width, height, format, bytes and quality, encoder and its version, whether signed, time |
-| set | `set_id`, template id and version, filter, N, whether large, selection seed, the number of pool images it chose from, image hashes, publication date (null until published) |
+| set | `set_id`, template id and version, filter, N, whether large, selection seed, the hashes of the images it chose from, image hashes, publication date (null until published) |
 
 R2 keys are `served/<sha256>` and `original/<sha256>`; each object carries its
 content type, set at upload from the file's format. The key never reaches
@@ -362,8 +386,9 @@ git:
 
 - every set has N distinct images, 12 ≤ N ≤ 16 unless it is marked large,
   all from one pool;
-- re-running a set's filter and selection seed on the pool images it chose
-  from reproduces its image list;
+- re-running a set's selection seed on the images it records it chose from,
+  each an image of its pool that matches its filter, reproduces its image
+  list;
 - no published set holds an unsigned image;
 - every image's parameter values are in its template's lists and not
   excluded;

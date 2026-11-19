@@ -28,6 +28,14 @@ export function parseCli<O extends Options>(usage: string, options: O, allowPosi
   return { values: parsed.values, positionals: parsed.positionals, root: resolve(common.root ?? REPO) }
 }
 
+/**
+ * A path the user typed, resolved from where they ran npm: `npm run` moves to the package root,
+ * and records the directory it started in as INIT_CWD.
+ */
+export function inputPath(p: string): string {
+  return resolve(process.env['INIT_CWD'] ?? process.cwd(), p)
+}
+
 export function requirePool(pool: unknown, usage: string): string {
   if (typeof pool !== 'string') fail(`--pool is required\n\n${usage}`)
   try {
